@@ -69,6 +69,17 @@ h1{
     word-break:break-word;
 }
 
+.image-box{
+    text-align:left;
+    margin:12px 0;
+}
+
+.image-box img{
+    max-width:320px;
+    border-radius:15px;
+    box-shadow:0 0 10px rgba(0,0,0,0.2);
+}
+
 .quick-buttons{
     margin-top:15px;
     margin-bottom:15px;
@@ -160,6 +171,12 @@ h1{
                 </div>
             {% endif %}
 
+            {% if item.role == "image" %}
+                <div class="image-box">
+                    <img src="{{ item.content }}">
+                </div>
+            {% endif %}
+
         {% endfor %}
 
     </div>
@@ -199,6 +216,12 @@ h1{
         <form method="POST">
             <button type="submit" name="question" value="GLOBAL_ISSUES">
                 🌍 해외 이슈
+            </button>
+        </form>
+
+        <form method="POST">
+            <button type="submit" name="question" value="GENERATE_IMAGE">
+                🖼 이미지 생성
             </button>
         </form>
 

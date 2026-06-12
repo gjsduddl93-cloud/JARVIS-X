@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 import os
 import re
+import base64
 
 load_dotenv()
 
@@ -13,6 +14,7 @@ app.secret_key = "jarvis_x_secret_key"
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 PROJECTS_DIR = "projects"
+IMAGE_DIR = "static/generated"
 
 SYSTEM_PROMPT = """
 당신은 JARVIS-X이다.
@@ -38,36 +40,17 @@ def clean_filename(text):
 
 
 def should_save_question(question):
-    short_words = [
-        "안녕",
-        "고마워",
-        "감사",
-        "좋아",
-        "그래",
-        "ㅇㅋ",
-        "오케이",
-        "다음",
-        "다음단계",
-        "진행",
-        "응",
-        "네",
-        "아니",
-    ]
-
     q = question.strip().replace(" ", "")
-
+    short_words = ["안녕", "고마워", "감사", "좋아", "그래", "응", "네", "다음", "진행"]
     if len(q) < 10:
         return False
-
     if q in short_words:
         return False
-
     return True
 
 
 def save_project(category, content):
     os.makedirs(PROJECTS_DIR, exist_ok=True)
-
     now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     filename = f"{now}_{clean_filename(category)}.txt"
     filepath = os.path.join(PROJECTS_DIR, filename)
@@ -79,25 +62,18 @@ def save_project(category, content):
 
 
 def ask_ai(user_prompt, max_tokens=700):
-    messages = [
-        {
-            "role": "system",
-            "content": SYSTEM_PROMPT
-        }
-    ]
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     history = session.get("history", [])[-10:]
 
     for item in history:
-        messages.append({
-            "role": item["role"],
-            "content": item["content"]
-        })
+        if item["role"] in ["user", "assistant"]:
+            messages.append({
+                "role": item["role"],
+                "content": item["content"]
+            })
 
-    messages.append({
-        "role": "user",
-        "content": user_prompt
-    })
+    messages.append({"role": "user", "content": user_prompt})
 
     try:
         response = client.responses.create(
@@ -106,7 +82,6 @@ def ask_ai(user_prompt, max_tokens=700):
             max_output_tokens=max_tokens,
             input=messages
         )
-
         return response.output_text
 
     except Exception as e:
@@ -122,8 +97,7 @@ def add_message(role, content):
 
 
 def get_trends():
-    return ask_ai(
-        """
+    return ask_ai("""
 글로벌 SNS에서 주목받을 만한 쇼츠/릴스 트렌드 5개를 추천해줘.
 
 형식:
@@ -131,14 +105,11 @@ def get_trends():
 - 설명
 - 조회수 잠재력
 - 추천 플랫폼
-""",
-        700
-    )
+""", 700)
 
 
 def create_shorts():
-    return ask_ai(
-        """
+    return ask_ai("""
 조회수가 잘 나올 쇼츠 아이디어 3개를 만들어줘.
 
 각 항목:
@@ -146,14 +117,11 @@ def create_shorts():
 - 훅
 - 30초 대본
 - 해시태그
-""",
-        800
-    )
+""", 800)
 
 
 def content_package():
-    return ask_ai(
-        """
+    return ask_ai("""
 유튜브 쇼츠, 인스타 릴스, 틱톡에 동시에 올릴 콘텐츠 패키지 1개를 만들어줘.
 
 형식:
@@ -163,14 +131,11 @@ def content_package():
 - 릴스 캡션
 - 틱톡 설명
 - 해시태그
-""",
-        800
-    )
+""", 800)
 
 
 def money_ideas():
-    return ask_ai(
-        """
+    return ask_ai("""
 월 10~50만원 부수입 목표로 자동화 가능한 수익 아이디어 5개를 추천해줘.
 
 각 항목:
@@ -178,36 +143,61 @@ def money_ideas():
 - 예상 수익
 - 자동화 방법
 - 시작 방법
-""",
-        800
-    )
+""", 800)
 
 
 def ai_news():
-    return ask_ai(
-        """
+    return ask_ai("""
 AI 콘텐츠 사업자가 참고할 만한 AI/테크 이슈 후보 5개를 알려줘.
 
 각 항목:
 - 이슈명
 - 콘텐츠로 만드는 방법
-""",
-        700
-    )
+""", 700)
 
 
 def global_issues():
-    return ask_ai(
-        """
+    return ask_ai("""
 해외 시청자를 노릴 수 있는 글로벌 이슈형 콘텐츠 주제 5개를 추천해줘.
 
 각 항목:
 - 주제
 - 바이럴 가능성
 - 쇼츠 제목 예시
-""",
-        700
-    )
+""", 700)
+
+
+def generate_image():
+    os.makedirs(IMAGE_DIR, exist_ok=True)
+
+    prompt = """
+Create a vertical viral YouTube Shorts thumbnail image.
+Theme: futuristic AI content automation, digital Jarvis-style assistant, glowing interface, modern tech mood.
+No text in the image.
+High contrast, cinematic lighting, eye-catching, 9:16 style.
+"""
+
+    try:
+        result = client.images.generate(
+            model="gpt-image-1",
+            prompt=prompt,
+            size="1024x1536"
+        )
+
+        image_base64 = result.data[0].b64_json
+        image_bytes = base64.b64decode(image_base64)
+
+        now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"{now}_jarvis_image.png"
+        filepath = os.path.join(IMAGE_DIR, filename)
+
+        with open(filepath, "wb") as file:
+            file.write(image_bytes)
+
+        return f"/static/generated/{filename}"
+
+    except Exception as e:
+        return f"이미지 생성 실패: {str(e)}"
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -245,6 +235,17 @@ def home():
                 answer = global_issues()
                 saved_filename = save_project("해외_이슈", answer)
 
+            elif question == "GENERATE_IMAGE":
+                image_result = generate_image()
+
+                if image_result.startswith("이미지 생성 실패"):
+                    add_message("assistant", image_result)
+                else:
+                    add_message("assistant", "🖼 이미지 생성 완료")
+                    add_message("image", image_result)
+
+                return render_template("index.html", history=session.get("history", []))
+
             else:
                 add_message("user", question)
                 answer = ask_ai(question, 700)
@@ -260,10 +261,7 @@ def home():
 
             add_message("assistant", answer)
 
-    return render_template(
-        "index.html",
-        history=session.get("history", [])
-    )
+    return render_template("index.html", history=session.get("history", []))
 
 
 @app.route("/reset")
