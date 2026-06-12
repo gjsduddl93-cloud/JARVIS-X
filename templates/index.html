@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JARVIS-X</title>
+
+<style>
+body{
+    margin:0;
+    background:#f4f6f9;
+    font-family:Arial, sans-serif;
+}
+
+.container{
+    width:95%;
+    max-width:1100px;
+    margin:auto;
+    padding:20px;
+}
+
+h1{
+    text-align:center;
+}
+
+.sub-title{
+    text-align:center;
+    color:#666;
+    margin-bottom:20px;
+}
+
+.chat-box{
+    background:white;
+    height:620px;
+    overflow-y:auto;
+    border-radius:15px;
+    padding:20px;
+    box-shadow:0 0 15px rgba(0,0,0,0.1);
+}
+
+.user{
+    text-align:right;
+    margin:12px 0;
+}
+
+.ai{
+    text-align:left;
+    margin:12px 0;
+}
+
+.bubble-user{
+    display:inline-block;
+    background:#0b84ff;
+    color:white;
+    padding:12px 16px;
+    border-radius:18px;
+    max-width:75%;
+    word-break:break-word;
+}
+
+.bubble-ai{
+    display:inline-block;
+    background:#e9ecef;
+    color:black;
+    padding:12px 16px;
+    border-radius:18px;
+    max-width:75%;
+    white-space:pre-line;
+    word-break:break-word;
+}
+
+.quick-buttons{
+    margin-top:15px;
+    margin-bottom:15px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+}
+
+.quick-buttons form{
+    display:inline;
+}
+
+.quick-buttons button{
+    padding:10px 14px;
+    border:none;
+    border-radius:10px;
+    cursor:pointer;
+    background:#ffffff;
+    box-shadow:0 0 5px rgba(0,0,0,0.15);
+}
+
+.quick-buttons button:hover{
+    background:#e9ecef;
+}
+
+.input-area{
+    display:flex;
+    margin-top:15px;
+}
+
+.input-area input{
+    flex:1;
+    padding:14px;
+    font-size:16px;
+    border:1px solid #ccc;
+    border-radius:10px;
+}
+
+.input-area button{
+    width:120px;
+    margin-left:10px;
+    border:none;
+    border-radius:10px;
+    background:#0b84ff;
+    color:white;
+    font-size:16px;
+    cursor:pointer;
+}
+
+.loading{
+    display:none;
+    margin-top:10px;
+    font-weight:bold;
+    color:#333;
+}
+
+.reset-link{
+    text-decoration:none;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>🚀 JARVIS-X</h1>
+    <div class="sub-title">
+        AI 콘텐츠 자동화 비서 · 월 10~50만원 부수입 목표
+    </div>
+
+    <div class="chat-box" id="chatBox">
+
+        {% for item in history %}
+
+            {% if item.role == "user" %}
+                <div class="user">
+                    <div class="bubble-user">
+                        {{ item.content }}
+                    </div>
+                </div>
+            {% endif %}
+
+            {% if item.role == "assistant" %}
+                <div class="ai">
+                    <div class="bubble-ai">
+                        {{ item.content }}
+                    </div>
+                </div>
+            {% endif %}
+
+        {% endfor %}
+
+    </div>
+
+    <div class="quick-buttons">
+
+        <form method="POST">
+            <button type="submit" name="question" value="GET_TRENDS">
+                🔥 오늘의 트렌드
+            </button>
+        </form>
+
+        <form method="POST">
+            <button type="submit" name="question" value="MAKE_SHORTS">
+                🎬 쇼츠 생성
+            </button>
+        </form>
+
+        <form method="POST">
+            <button type="submit" name="question" value="CONTENT_PACKAGE">
+                📦 콘텐츠 패키지
+            </button>
+        </form>
+
+        <form method="POST">
+            <button type="submit" name="question" value="MONEY_IDEAS">
+                💰 수익 아이디어
+            </button>
+        </form>
+
+        <form method="POST">
+            <button type="submit" name="question" value="AI_NEWS">
+                📰 AI 뉴스
+            </button>
+        </form>
+
+        <form method="POST">
+            <button type="submit" name="question" value="GLOBAL_ISSUES">
+                🌍 해외 이슈
+            </button>
+        </form>
+
+        <a href="/reset" class="reset-link">
+            <button type="button">
+                🗑 초기화
+            </button>
+        </a>
+
+    </div>
+
+    <form method="POST" id="chatForm" class="input-area">
+
+        <input
+            type="text"
+            id="question"
+            name="question"
+            placeholder="예: AI로 자동 수익 만드는 방법 알려줘"
+            autocomplete="off"
+            required
+        >
+
+        <button type="submit">
+            전송
+        </button>
+
+    </form>
+
+    <div id="loading" class="loading">
+        🤖 JARVIS-X 생각중...
+    </div>
+
+</div>
+
+<script>
+const chatBox = document.getElementById("chatBox");
+
+if(chatBox){
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+document.getElementById("question").addEventListener("keypress", function(e){
+    if(e.key === "Enter"){
+        document.getElementById("chatForm").submit();
+    }
+});
+
+document.getElementById("chatForm").addEventListener("submit", function(){
+    document.getElementById("loading").style.display = "block";
+});
+
+const forms = document.querySelectorAll(".quick-buttons form");
+
+forms.forEach(function(form){
+    form.addEventListener("submit", function(){
+        document.getElementById("loading").style.display = "block";
+    });
+});
+</script>
+
+</body>
+</html>
