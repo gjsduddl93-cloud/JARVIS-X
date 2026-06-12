@@ -10,83 +10,112 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = "jarvis_x_secret_key"
 
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
-)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+PROJECTS_DIR = "projects"
 
 SYSTEM_PROMPT = """
 당신은 JARVIS-X이다.
 
-목표:
-- 사용자가 월 10~50만원 이상의 부수입을 만들 수 있도록 돕는다.
-- 장기적으로 더 큰 자동화 수익 시스템을 구축한다.
-- 유튜브 쇼츠, 인스타 릴스, 틱톡, 블로그 등 원소스 멀티유즈 콘텐츠 전략을 우선한다.
-- 추후 자동 트레이딩 보조 시스템까지 확장할 수 있도록 돕는다.
+사용자의 목표:
+- AI 콘텐츠 자동화로 월 10~50만원 부수입 만들기
+- 유튜브 쇼츠, 인스타 릴스, 틱톡, 블로그 동시 활용
+- 장기적으로 더 큰 자동화 수익 시스템 구축
 
 답변 규칙:
 1. 항상 한국어로 답변
-2. 실행 가능한 내용 위주로 답변
-3. 너무 길게 설명하지 말 것
+2. 기본 답변은 3~5줄 이내
+3. 사용자가 자세히 요청할 때만 길게 설명
 4. 목록은 최대 5개
-5. 수익화 관점 포함
+5. 실행 가능한 내용만 말하기
+6. 단순 인사에는 짧게 응답
 """
-
-PROJECTS_DIR = "projects"
-
-
-def ask_ai(prompt, max_tokens=900):
-    try:
-        response = client.responses.create(
-            model="gpt-5-mini",
-            max_output_tokens=max_tokens,
-            input=f"""
-{SYSTEM_PROMPT}
-
-요청:
-{prompt}
-"""
-        )
-        return response.output_text
-    except Exception as e:
-        return f"오류 발생: {str(e)}"
 
 
 def clean_filename(text):
     text = re.sub(r'[\\/*?:"<>|]', "", text)
-    text = text.replace("\n", " ")
     return text[:30].strip()
 
 
+def should_save_question(question):
+    short_words = [
+        "안녕",
+        "고마워",
+        "감사",
+        "좋아",
+        "그래",
+        "ㅇㅋ",
+        "오케이",
+        "다음",
+        "다음단계",
+        "진행",
+        "응",
+        "네",
+        "아니",
+    ]
+
+    q = question.strip().replace(" ", "")
+
+    if len(q) < 10:
+        return False
+
+    if q in short_words:
+        return False
+
+    return True
+
+
 def save_project(category, content):
+    os.makedirs(PROJECTS_DIR, exist_ok=True)
+
+    now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"{now}_{clean_filename(category)}.txt"
+    filepath = os.path.join(PROJECTS_DIR, filename)
+
+    with open(filepath, "w", encoding="utf-8") as file:
+        file.write(content)
+
+    return filename
+
+
+def ask_ai(user_prompt, max_tokens=700):
+    messages = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT
+        }
+    ]
+
+    history = session.get("history", [])[-10:]
+
+    for item in history:
+        messages.append({
+            "role": item["role"],
+            "content": item["content"]
+        })
+
+    messages.append({
+        "role": "user",
+        "content": user_prompt
+    })
+
     try:
-        os.makedirs(PROJECTS_DIR, exist_ok=True)
+        response = client.responses.create(
+            model="gpt-5-mini",
+            reasoning={"effort": "low"},
+            max_output_tokens=max_tokens,
+            input=messages
+        )
 
-        now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        safe_category = clean_filename(category)
-
-        filename = f"{now}_{safe_category}.txt"
-        filepath = os.path.join(PROJECTS_DIR, filename)
-
-        with open(filepath, "w", encoding="utf-8") as file:
-            file.write(content)
-
-        return filename
+        return response.output_text
 
     except Exception as e:
-        return f"저장 실패: {str(e)}"
+        return f"오류 발생: {str(e)}"
 
 
-def add_assistant_message(content):
+def add_message(role, content):
     session["history"].append({
-        "role": "assistant",
-        "content": content
-    })
-    session["history"] = session["history"][-30:]
-
-
-def add_user_message(content):
-    session["history"].append({
-        "role": "user",
+        "role": role,
         "content": content
     })
     session["history"] = session["history"][-30:]
@@ -95,62 +124,75 @@ def add_user_message(content):
 def get_trends():
     return ask_ai(
         """
-현재 글로벌 SNS(유튜브 쇼츠, 틱톡, 인스타 릴스)에서 주목받을 만한 트렌드 10개를 알려줘.
+글로벌 SNS에서 주목받을 만한 쇼츠/릴스 트렌드 5개를 추천해줘.
 
 형식:
 1. 트렌드명
 - 설명
-- 조회수 잠재력(1~10)
+- 조회수 잠재력
 - 추천 플랫폼
 """,
-        900
+        700
     )
 
 
 def create_shorts():
     return ask_ai(
         """
-조회수가 잘 나올 쇼츠 아이디어 5개를 생성해줘.
+조회수가 잘 나올 쇼츠 아이디어 3개를 만들어줘.
 
-각 항목 형식:
-1. 제목
+각 항목:
+- 제목
 - 훅
 - 30초 대본
-- 썸네일 문구
-- 추천 해시태그
+- 해시태그
 """,
-        1000
+        800
+    )
+
+
+def content_package():
+    return ask_ai(
+        """
+유튜브 쇼츠, 인스타 릴스, 틱톡에 동시에 올릴 콘텐츠 패키지 1개를 만들어줘.
+
+형식:
+- 주제
+- 제목
+- 30초 대본
+- 릴스 캡션
+- 틱톡 설명
+- 해시태그
+""",
+        800
     )
 
 
 def money_ideas():
     return ask_ai(
         """
-월 10~50만원 부수입을 목표로 오늘부터 시작 가능한 자동화 수익 아이디어 5개를 알려줘.
+월 10~50만원 부수입 목표로 자동화 가능한 수익 아이디어 5개를 추천해줘.
 
-각 항목 형식:
-1. 아이디어명
+각 항목:
+- 아이디어
 - 예상 수익
-- 자동화 가능성
+- 자동화 방법
 - 시작 방법
-- 주의점
 """,
-        1000
+        800
     )
 
 
 def ai_news():
     return ask_ai(
         """
-AI 콘텐츠 사업자가 알아야 할 오늘의 AI/테크 뉴스 주제 5개를 알려줘.
-실제 최신 뉴스라고 단정하지 말고, 최근 주목해야 할 이슈 후보로 정리해줘.
+AI 콘텐츠 사업자가 참고할 만한 AI/테크 이슈 후보 5개를 알려줘.
 
-각 항목 형식:
-1. 이슈명
-- 왜 중요한지
-- 콘텐츠로 만들 방법
+각 항목:
+- 이슈명
+- 콘텐츠로 만드는 방법
 """,
-        900
+        700
     )
 
 
@@ -159,31 +201,12 @@ def global_issues():
         """
 해외 시청자를 노릴 수 있는 글로벌 이슈형 콘텐츠 주제 5개를 추천해줘.
 
-각 항목 형식:
-1. 주제
-- 왜 바이럴 가능성이 있는지
-- 쇼츠 제목 예시
-- 추천 플랫폼
-""",
-        900
-    )
-
-
-def content_package():
-    return ask_ai(
-        """
-유튜브 쇼츠, 인스타 릴스, 틱톡에 동시에 올릴 수 있는 콘텐츠 패키지 1개를 만들어줘.
-
-형식:
+각 항목:
 - 주제
-- 유튜브 쇼츠 제목
-- 인스타 릴스 캡션
-- 틱톡 설명
-- 30초 대본
-- 썸네일 문구
-- 해시태그
+- 바이럴 가능성
+- 쇼츠 제목 예시
 """,
-        1000
+        700
     )
 
 
@@ -206,6 +229,10 @@ def home():
                 answer = create_shorts()
                 saved_filename = save_project("쇼츠_생성", answer)
 
+            elif question == "CONTENT_PACKAGE":
+                answer = content_package()
+                saved_filename = save_project("콘텐츠_패키지", answer)
+
             elif question == "MONEY_IDEAS":
                 answer = money_ideas()
                 saved_filename = save_project("수익_아이디어", answer)
@@ -218,19 +245,20 @@ def home():
                 answer = global_issues()
                 saved_filename = save_project("해외_이슈", answer)
 
-            elif question == "CONTENT_PACKAGE":
-                answer = content_package()
-                saved_filename = save_project("콘텐츠_패키지", answer)
-
             else:
-                add_user_message(question)
-                answer = ask_ai(question, 900)
-                saved_filename = save_project("일반_질문", f"질문:\n{question}\n\n답변:\n{answer}")
+                add_message("user", question)
+                answer = ask_ai(question, 700)
+
+                if should_save_question(question):
+                    saved_filename = save_project(
+                        "일반_질문",
+                        f"질문:\n{question}\n\n답변:\n{answer}"
+                    )
 
             if saved_filename:
                 answer = f"{answer}\n\n---\n📁 저장 완료: projects/{saved_filename}"
 
-            add_assistant_message(answer)
+            add_message("assistant", answer)
 
     return render_template(
         "index.html",
