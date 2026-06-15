@@ -22,6 +22,11 @@ SYSTEM_PROMPT = """
 - 유튜브 쇼츠, 인스타 릴스, 틱톡, 블로그 동시 활용
 - 장기적으로 더 큰 자동화 수익 시스템 구축
 
+콘텐츠 방향:
+- 40% AI 활용법
+- 30% 돈 버는 방법/부업/AI 수익화
+- 30% 해외 신기한 사실/미스터리/흥미로운 정보
+
 답변 규칙:
 1. 항상 한국어로 답변
 2. 기본 답변은 3~5줄 이내
@@ -181,6 +186,37 @@ def image_prompt():
 """, 800)
 
 
+def video_package():
+    return ask_ai("""
+CapCut에서 바로 영상으로 만들 수 있는 30초 쇼츠 영상 제작 패키지 1개를 만들어줘.
+
+콘텐츠 방향은 다음 비율을 반영:
+- AI 활용법
+- 돈 버는 방법/부업/AI 수익화
+- 해외 신기한 사실/미스터리
+
+형식:
+1. 콘텐츠 주제
+2. 유튜브 쇼츠 제목
+3. 첫 3초 훅 문장
+4. 30초 나레이션 대본
+5. 장면 구성
+   - 장면 1: 화면 설명 / 자막
+   - 장면 2: 화면 설명 / 자막
+   - 장면 3: 화면 설명 / 자막
+   - 장면 4: 화면 설명 / 자막
+6. CapCut 편집 지시
+   - 화면 비율
+   - 자막 스타일
+   - 전환 효과
+   - BGM 분위기
+7. 썸네일 문구
+8. 유튜브 설명
+9. 인스타 릴스 캡션
+10. 해시태그
+""", 1200)
+
+
 @app.route("/", methods=["GET", "POST"])
 def home():
     if "history" not in session:
@@ -219,6 +255,10 @@ def home():
             elif question == "IMAGE_PROMPT":
                 answer = image_prompt()
                 saved_filename = save_project("이미지_프롬프트", answer)
+
+            elif question == "VIDEO_PACKAGE":
+                answer = video_package()
+                saved_filename = save_project("영상_제작_패키지", answer)
 
             else:
                 add_message("user", question)
