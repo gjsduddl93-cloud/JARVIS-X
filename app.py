@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 from datetime import datetime
 import os
 import re
-import base64
 
 load_dotenv()
 
@@ -14,7 +13,6 @@ app.secret_key = "jarvis_x_secret_key"
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 PROJECTS_DIR = "projects"
-IMAGE_DIR = "static/generated"
 
 SYSTEM_PROMPT = """
 당신은 JARVIS-X이다.
@@ -51,6 +49,7 @@ def should_save_question(question):
 
 def save_project(category, content):
     os.makedirs(PROJECTS_DIR, exist_ok=True)
+
     now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     filename = f"{now}_{clean_filename(category)}.txt"
     filepath = os.path.join(PROJECTS_DIR, filename)
@@ -167,37 +166,19 @@ def global_issues():
 """, 700)
 
 
-def generate_image():
-    os.makedirs(IMAGE_DIR, exist_ok=True)
+def image_prompt():
+    return ask_ai("""
+유튜브 쇼츠/인스타 릴스용 이미지 제작 프롬프트를 만들어줘.
 
-    prompt = """
-Create a vertical viral YouTube Shorts thumbnail image.
-Theme: futuristic AI content automation, digital Jarvis-style assistant, glowing interface, modern tech mood.
-No text in the image.
-High contrast, cinematic lighting, eye-catching, 9:16 style.
-"""
+형식:
+1. 썸네일 이미지 프롬프트
+2. 영상 배경 이미지 프롬프트
+3. 인스타 릴스 커버 이미지 프롬프트
+4. 권장 스타일
+5. 주의할 점
 
-    try:
-        result = client.images.generate(
-            model="gpt-image-1",
-            prompt=prompt,
-            size="1024x1536"
-        )
-
-        image_base64 = result.data[0].b64_json
-        image_bytes = base64.b64decode(image_base64)
-
-        now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"{now}_jarvis_image.png"
-        filepath = os.path.join(IMAGE_DIR, filename)
-
-        with open(filepath, "wb") as file:
-            file.write(image_bytes)
-
-        return f"/static/generated/{filename}"
-
-    except Exception as e:
-        return f"이미지 생성 실패: {str(e)}"
+프롬프트는 영어로 작성하고, 설명은 한국어로 짧게 작성해줘.
+""", 800)
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -235,16 +216,9 @@ def home():
                 answer = global_issues()
                 saved_filename = save_project("해외_이슈", answer)
 
-            elif question == "GENERATE_IMAGE":
-                image_result = generate_image()
-
-                if image_result.startswith("이미지 생성 실패"):
-                    add_message("assistant", image_result)
-                else:
-                    add_message("assistant", "🖼 이미지 생성 완료")
-                    add_message("image", image_result)
-
-                return render_template("index.html", history=session.get("history", []))
+            elif question == "IMAGE_PROMPT":
+                answer = image_prompt()
+                saved_filename = save_project("이미지_프롬프트", answer)
 
             else:
                 add_message("user", question)
@@ -261,7 +235,10 @@ def home():
 
             add_message("assistant", answer)
 
-    return render_template("index.html", history=session.get("history", []))
+    return render_template(
+        "index.html",
+        history=session.get("history", [])
+    )
 
 
 @app.route("/reset")
