@@ -1,0 +1,29 @@
+name: Auto Create Content Daily
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  create-content:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Call auto-create endpoint
+        run: |
+          RESPONSE=$(curl -s -X GET "${{ secrets.RENDER_URL }}/auto-create?key=${{ secrets.AUTO_KEY }}")
+          echo "Response: $RESPONSE"
+          
+          if echo "$RESPONSE" | grep -q "error"; then
+            echo "❌ 콘텐츠 생성 실패"
+            exit 1
+          else
+            echo "✅ 콘텐츠 생성 성공"
+          fi
+      
+      - name: Send success notification
+        if: success()
+        run: |
+          echo "✅ 오늘의 콘텐츠 생성 완료!"
+          echo "시간: $(date '+%Y-%m-%d %H:%M:%S')"
