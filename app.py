@@ -1,7 +1,12 @@
 from flask import Flask, render_template, request, session, jsonify, redirect
 from anthropic import Anthropic
 from openai import OpenAI
-from google.cloud import texttospeech
+try:
+    from google.cloud import texttospeech
+    _TTS_AVAILABLE = True
+except ImportError:
+    texttospeech = None
+    _TTS_AVAILABLE = False
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
@@ -25,7 +30,11 @@ app.secret_key = os.getenv("SECRET_KEY", "jarvis_x_secret_key")
 # API 초기화
 claude_client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-tts_client = texttospeech.TextToSpeechClient()
+try:
+    tts_client = texttospeech.TextToSpeechClient() if _TTS_AVAILABLE else None
+except Exception:
+    tts_client = None
+    _TTS_AVAILABLE = False
 
 PROJECTS_DIR = "projects"
 VIDEOS_DIR = os.path.join(PROJECTS_DIR, "videos")
@@ -135,6 +144,8 @@ def generate_image_dalle(prompt):
 
 def generate_audio_tts(text, output_path):
     """Google Cloud TTS로 음성 생성"""
+    if not _TTS_AVAILABLE or tts_client is None:
+        return None
     try:
         synthesis_input = texttospeech.SynthesisInput(text=text)
         
