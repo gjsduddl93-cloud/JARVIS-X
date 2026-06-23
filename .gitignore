@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 projects/
 logs/
+client_secret.json
+client_secret.json.json
+youtube_token.json
