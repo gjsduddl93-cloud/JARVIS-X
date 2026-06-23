@@ -94,6 +94,26 @@ h1{
     background:#e9ecef;
 }
 
+.video-pkg-btn{
+    background:#0b84ff !important;
+    color:#fff !important;
+    font-weight:bold;
+}
+
+.video-pkg-btn:hover{
+    background:#0066cc !important;
+}
+
+.video-pkg-btn.running{
+    background:#ff9500 !important;
+    cursor:not-allowed;
+}
+
+.progress-bubble{
+    white-space:pre-line;
+    border-left:3px solid #0b84ff;
+}
+
 .input-area{
     display:flex;
     margin-top:15px;
@@ -178,11 +198,9 @@ h1{
             </button>
         </form>
 
-        <form method="POST">
-            <button type="submit" name="question" value="VIDEO_PACKAGE">
-                🎥 영상 제작 패키지
-            </button>
-        </form>
+        <button type="button" class="video-pkg-btn" onclick="startVideoPackage()">
+            🎥 영상 제작 패키지
+        </button>
 
         <form method="POST">
             <button type="submit" name="question" value="CONTENT_PACKAGE">
@@ -248,27 +266,106 @@ h1{
 <script>
 const chatBox = document.getElementById("chatBox");
 
-if(chatBox){
-    chatBox.scrollTop = chatBox.scrollHeight;
-}
+if(chatBox){ chatBox.scrollTop = chatBox.scrollHeight; }
 
 document.getElementById("question").addEventListener("keypress", function(e){
-    if(e.key === "Enter"){
-        document.getElementById("chatForm").submit();
-    }
+    if(e.key === "Enter"){ document.getElementById("chatForm").submit(); }
 });
 
 document.getElementById("chatForm").addEventListener("submit", function(){
     document.getElementById("loading").style.display = "block";
 });
 
-const forms = document.querySelectorAll(".quick-buttons form");
-
-forms.forEach(function(form){
+document.querySelectorAll(".quick-buttons form").forEach(function(form){
     form.addEventListener("submit", function(){
         document.getElementById("loading").style.display = "block";
     });
 });
+
+// ── 영상 제작 패키지 백그라운드 처리 ─────────────────────────────────────────
+let _videoPolling = null;
+
+function startVideoPackage() {
+    const btn = document.querySelector(".video-pkg-btn");
+    if(btn.classList.contains("running")) return;  // 중복 실행 방지
+
+    btn.classList.add("running");
+    btn.textContent = "⏳ 실행 중...";
+
+    // 사용자 버블
+    const userDiv = document.createElement("div");
+    userDiv.className = "user";
+    userDiv.innerHTML = '<div class="bubble-user">🎥 영상 제작 패키지</div>';
+    chatBox.appendChild(userDiv);
+
+    // AI 진행 버블
+    const aiDiv = document.createElement("div");
+    aiDiv.className = "ai";
+    const bubble = document.createElement("div");
+    bubble.className = "bubble-ai progress-bubble";
+    bubble.textContent = "🎬 영상 제작 요청 중...";
+    aiDiv.appendChild(bubble);
+    chatBox.appendChild(aiDiv);
+    chatBox.scrollTop = chatBox.scrollHeight;
+
+    fetch("/start-video", { method: "POST" })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+        const jobId = data.job_id;
+        bubble.textContent = "🎬 작업 시작됨 (ID: " + jobId + ")\n⏳ 3초마다 자동 업데이트...";
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        _videoPolling = setInterval(function(){
+            fetch("/status/" + jobId)
+            .then(function(r){ return r.json(); })
+            .then(function(job){
+                const logs = (job.logs || []).join("\n");
+                let msg = logs;
+
+                if(job.status === "done"){
+                    clearInterval(_videoPolling);
+                    btn.classList.remove("running");
+                    btn.textContent = "🎥 영상 제작 패키지";
+
+                    if(job.content){
+                        msg += "\n\n📋 제목: " + job.content.title;
+                        msg += "\n📝 설명: " + job.content.description;
+                        msg += "\n🏷 태그: " + (job.content.tags || []).join(", ");
+                    }
+                    if(job.youtube && job.youtube.status === "success"){
+                        msg += "\n🔗 " + job.youtube.url;
+                    }
+                    msg += "\n\n✨ 완료!";
+
+                    // 세션 히스토리에 저장
+                    fetch("/save-chat", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({user:"🎥 영상 제작 패키지", assistant: msg})
+                    });
+
+                } else if(job.status === "error"){
+                    clearInterval(_videoPolling);
+                    btn.classList.remove("running");
+                    btn.textContent = "🎥 영상 제작 패키지";
+                    msg += "\n\n❌ 오류: " + (job.error || "알 수 없는 오류");
+
+                } else {
+                    msg += "\n\n⏳ 진행 중... (자동 업데이트)";
+                }
+
+                bubble.textContent = msg;
+                chatBox.scrollTop = chatBox.scrollHeight;
+            })
+            .catch(function(){ /* 폴링 오류 무시, 계속 시도 */ });
+        }, 3000);
+    })
+    .catch(function(err){
+        bubble.textContent = "❌ 요청 실패: " + err.message;
+        btn.classList.remove("running");
+        btn.textContent = "🎥 영상 제작 패키지";
+    });
+}
 </script>
 
 </body>

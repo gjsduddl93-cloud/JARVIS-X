@@ -2,6 +2,8 @@ from flask import Flask, render_template, request, session, jsonify
 from anthropic import Anthropic
 from openai import OpenAI
 import httpx
+import threading
+import uuid
 
 try:
     from google.oauth2.credentials import Credentials
@@ -35,40 +37,63 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "jarvis_x_secret_key")
 
-MAX_HISTORY = 20  # 세션 쿠키 4KB 초과 방지
+MAX_HISTORY = 20
 
-# ── API 클라이언트 초기화 (키 없어도 앱이 시작되도록 try/except) ──────────────
+# ── API 클라이언트 초기화 ─────────────────────────────────────────────────────
 _timeout = httpx.Timeout(30.0, connect=10.0)
 
 try:
-    claude_client = Anthropic(
-        api_key=os.getenv("ANTHROPIC_API_KEY"),
-        timeout=_timeout
-    )
+    claude_client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), timeout=_timeout)
     print("[INFO] Anthropic 클라이언트 초기화 성공")
 except Exception as _e:
     print(f"[WARN] Anthropic 클라이언트 초기화 실패: {_e}")
     claude_client = None
 
 try:
-    openai_client = OpenAI(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        timeout=_timeout
-    )
+    openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=_timeout)
     print("[INFO] OpenAI 클라이언트 초기화 성공")
 except Exception as _e:
     print(f"[WARN] OpenAI 클라이언트 초기화 실패: {_e}")
     openai_client = None
 
-# ── 디렉터리 생성 ──────────────────────────────────────────────────────────────
+# ── 디렉터리 생성 ─────────────────────────────────────────────────────────────
 PROJECTS_DIR = "projects"
-VIDEOS_DIR = os.path.join(PROJECTS_DIR, "videos")
-AUDIO_DIR = os.path.join(PROJECTS_DIR, "audio")
-IMAGES_DIR = os.path.join(PROJECTS_DIR, "images")
+VIDEOS_DIR   = os.path.join(PROJECTS_DIR, "videos")
+AUDIO_DIR    = os.path.join(PROJECTS_DIR, "audio")
+IMAGES_DIR   = os.path.join(PROJECTS_DIR, "images")
 
 for _dir in [PROJECTS_DIR, VIDEOS_DIR, AUDIO_DIR, IMAGES_DIR]:
     os.makedirs(_dir, exist_ok=True)
 
+# ── 백그라운드 작업 저장소 ────────────────────────────────────────────────────
+# { job_id: {status, logs, content, video_path, youtube, error, created_at} }
+_jobs: dict = {}
+_jobs_lock = threading.Lock()
+
+def _get_job(job_id: str) -> dict | None:
+    with _jobs_lock:
+        return dict(_jobs[job_id]) if job_id in _jobs else None
+
+def _update_job(job_id: str, **kwargs) -> None:
+    with _jobs_lock:
+        if job_id in _jobs:
+            _jobs[job_id].update(kwargs)
+
+def _append_log(job_id: str, msg: str) -> None:
+    with _jobs_lock:
+        if job_id in _jobs:
+            _jobs[job_id]["logs"].append(msg)
+    print(f"[JOB {job_id[:8]}] {msg}")
+
+def _cleanup_old_jobs() -> None:
+    """100개 초과 시 오래된 작업 정리"""
+    with _jobs_lock:
+        if len(_jobs) > 100:
+            old = sorted(_jobs, key=lambda k: _jobs[k]["created_at"])[:50]
+            for k in old:
+                del _jobs[k]
+
+# ── 시스템 프롬프트 ────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """
 당신은 JARVIS-X이다.
 
@@ -91,8 +116,8 @@ SYSTEM_PROMPT = """
 6. JSON 형식 요청시 정확한 JSON만 반환
 """
 
-YOUTUBE_SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
-TOKEN_FILE = 'youtube_token.json'
+YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+TOKEN_FILE = "youtube_token.json"
 
 
 # ── AI 호출 ──────────────────────────────────────────────────────────────────
@@ -102,13 +127,13 @@ def ask_claude(user_prompt, max_tokens=1024):
         print("[WARN] ask_claude: ANTHROPIC_API_KEY 미설정")
         return None
     try:
-        message = claude_client.messages.create(
+        msg = claude_client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=max_tokens,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}]
         )
-        return message.content[0].text
+        return msg.content[0].text
     except Exception as e:
         print(f"[ERROR] ask_claude 실패: {e}")
         print(traceback.format_exc())
@@ -120,7 +145,7 @@ def ask_chatgpt(user_prompt, max_tokens=1024):
         print("[WARN] ask_chatgpt: OPENAI_API_KEY 미설정")
         return None
     try:
-        response = openai_client.chat.completions.create(
+        resp = openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -129,7 +154,7 @@ def ask_chatgpt(user_prompt, max_tokens=1024):
             max_tokens=max_tokens,
             temperature=0.7
         )
-        return response.choices[0].message.content
+        return resp.choices[0].message.content
     except Exception as e:
         print(f"[ERROR] ask_chatgpt 실패: {e}")
         print(traceback.format_exc())
@@ -140,107 +165,71 @@ def ask_ai(user_prompt, max_tokens=1024, prefer_claude=True):
     """Claude 우선, 실패 시 ChatGPT 자동 전환"""
     if prefer_claude:
         result = ask_claude(user_prompt, max_tokens)
-        if result:
-            return result
-        return ask_chatgpt(user_prompt, max_tokens)
+        return result if result else ask_chatgpt(user_prompt, max_tokens)
     else:
         result = ask_chatgpt(user_prompt, max_tokens)
-        if result:
-            return result
-        return ask_claude(user_prompt, max_tokens)
+        return result if result else ask_claude(user_prompt, max_tokens)
 
 
-# ── 이미지 생성 ────────────────────────────────────────────────────────────────
+# ── 이미지 / 영상 생성 ────────────────────────────────────────────────────────
 
 def generate_image_dalle(prompt):
-    """DALL-E 2로 이미지 생성"""
     if not openai_client:
         print("[WARN] generate_image_dalle: OPENAI_API_KEY 미설정")
         return None
     try:
-        print(f"[INFO] DALL-E 2 이미지 생성 시작: {prompt[:80]}...")
-        response = openai_client.images.generate(
-            prompt=prompt,
-            model="dall-e-2",
-            size="1024x1024",
-            n=1
+        print(f"[INFO] DALL-E 2 생성 시작: {prompt[:80]}...")
+        resp = openai_client.images.generate(
+            prompt=prompt, model="dall-e-2", size="1024x1024", n=1
         )
-        image_url = response.data[0].url
-        print(f"[INFO] DALL-E 2 URL 획득: {image_url[:60]}...")
-        img_data = requests.get(image_url, timeout=30).content
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        image_path = os.path.join(IMAGES_DIR, f"image_{timestamp}.png")
-        with open(image_path, "wb") as f:
+        url = resp.data[0].url
+        img_data = requests.get(url, timeout=30).content
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(IMAGES_DIR, f"image_{ts}.png")
+        with open(path, "wb") as f:
             f.write(img_data)
-        print(f"[INFO] 이미지 저장 완료: {image_path} ({len(img_data)} bytes)")
-        return image_path
+        print(f"[INFO] 이미지 저장: {path} ({len(img_data)} bytes)")
+        return path
     except Exception as e:
         print(f"[ERROR] generate_image_dalle 실패: {e}")
         print(traceback.format_exc())
         return None
 
 
-# ── 영상 생성 ──────────────────────────────────────────────────────────────────
-
 def create_simple_video(content_data):
-    """이미지 → mp4 (이미지 생성 실패 시 단색 배경으로 계속 진행)"""
+    """이미지 → mp4. 이미지 실패 시 단색 배경으로 대체."""
     try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        image_prompt = content_data.get("image_prompt", "Professional video thumbnail")
-        image_path = generate_image_dalle(image_prompt)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        image_path = generate_image_dalle(
+            content_data.get("image_prompt", "Professional video thumbnail")
+        )
         if not image_path:
-            print("[WARN] create_simple_video: 이미지 생성 실패 → 단색 배경으로 대체")
+            print("[WARN] create_simple_video: 이미지 없음 → 단색 배경 대체")
 
-        audio_path = None  # TTS 비활성화 상태
-
-        video_path = os.path.join(VIDEOS_DIR, f"video_{timestamp}.mp4")
+        video_path = os.path.join(VIDEOS_DIR, f"video_{ts}.mp4")
 
         # ffmpeg 존재 확인
         try:
-            ffmpeg_check = subprocess.run(
-                ["ffmpeg", "-version"],
-                capture_output=True, text=True, timeout=10
-            )
-            if ffmpeg_check.returncode != 0:
-                print("[ERROR] create_simple_video: ffmpeg 응답 비정상")
+            chk = subprocess.run(["ffmpeg", "-version"],
+                                 capture_output=True, text=True, timeout=10)
+            if chk.returncode != 0:
+                print("[ERROR] ffmpeg 응답 비정상")
                 return None
         except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-            print(f"[ERROR] create_simple_video: ffmpeg 실행 불가 - {e}")
+            print(f"[ERROR] ffmpeg 실행 불가: {e}")
             return None
 
-        if image_path and audio_path:
-            try:
-                probe = subprocess.run(
-                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                     "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
-                    capture_output=True, text=True, timeout=10
-                )
-                duration = float(probe.stdout.strip()) if probe.stdout.strip() else 10
-            except Exception as e:
-                print(f"[WARN] ffprobe 실패, duration=10 사용: {e}")
-                duration = 10
-
-            cmd = [
-                "ffmpeg", "-y",
-                "-loop", "1", "-i", image_path,
-                "-i", audio_path,
-                "-c:v", "libx264", "-c:a", "aac",
-                "-shortest", "-pix_fmt", "yuv420p",
-                "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2",
-                video_path
-            ]
-        elif image_path:
+        if image_path:
             cmd = [
                 "ffmpeg", "-y",
                 "-loop", "1", "-i", image_path,
                 "-c:v", "libx264", "-t", "10",
                 "-pix_fmt", "yuv420p",
-                "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2",
+                "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,"
+                       "pad=1080:1920:(ow-iw)/2:(oh-ih)/2",
                 video_path
             ]
         else:
-            print("[INFO] create_simple_video: 이미지 없음 → lavfi 단색 배경 생성")
             cmd = [
                 "ffmpeg", "-y",
                 "-f", "lavfi", "-i", "color=c=0x1a1a2e:size=1080x1920:rate=30",
@@ -249,18 +238,16 @@ def create_simple_video(content_data):
                 video_path
             ]
 
-        print(f"[INFO] FFmpeg 실행: {' '.join(cmd)}")
+        print(f"[INFO] FFmpeg: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
         if result.returncode == 0 and os.path.exists(video_path):
-            size = os.path.getsize(video_path)
-            print(f"[INFO] 영상 생성 완료: {video_path} ({size} bytes)")
+            print(f"[INFO] 영상 완료: {video_path} ({os.path.getsize(video_path)} bytes)")
             return video_path
-        else:
-            print(f"[ERROR] FFmpeg 실패 (rc={result.returncode})")
-            print(f"[ERROR] stdout:\n{result.stdout}")
-            print(f"[ERROR] stderr:\n{result.stderr}")
-            return None
+
+        print(f"[ERROR] FFmpeg 실패 rc={result.returncode}")
+        print(f"[ERROR] stderr:\n{result.stderr}")
+        return None
 
     except Exception as e:
         print(f"[ERROR] create_simple_video 예외: {e}")
@@ -268,7 +255,7 @@ def create_simple_video(content_data):
         return None
 
 
-# ── YouTube ───────────────────────────────────────────────────────────────────
+# ── YouTube ──────────────────────────────────────────────────────────────────
 
 def get_youtube_service():
     if not GOOGLE_AVAILABLE:
@@ -284,8 +271,7 @@ def get_youtube_service():
                 return None, "auth_required"
         return build("youtube", "v3", credentials=creds), None
     except Exception as e:
-        print(f"[ERROR] get_youtube_service 실패: {e}")
-        print(traceback.format_exc())
+        print(f"[ERROR] get_youtube_service: {e}")
         return None, str(e)
 
 
@@ -293,52 +279,42 @@ def upload_to_youtube(video_path, title, description, tags):
     if not GOOGLE_AVAILABLE:
         return {"status": "skipped", "message": "google_packages_not_installed"}
     try:
-        youtube_service, error = get_youtube_service()
-        if not youtube_service:
-            return {"status": "auth_required", "message": error}
+        svc, err = get_youtube_service()
+        if not svc:
+            return {"status": "auth_required", "message": err}
 
-        body = {
-            "snippet": {
-                "title": title,
-                "description": description,
-                "tags": tags,
-                "categoryId": "22"
-            },
-            "status": {"privacyStatus": "public", "madeForKids": False}
-        }
         media = MediaFileUpload(video_path, mimetype="video/mp4", resumable=True)
-        yt_req = youtube_service.videos().insert(
-            part="snippet,status", body=body, media_body=media
+        yt_req = svc.videos().insert(
+            part="snippet,status",
+            body={
+                "snippet": {"title": title, "description": description,
+                            "tags": tags, "categoryId": "22"},
+                "status":  {"privacyStatus": "public", "madeForKids": False}
+            },
+            media_body=media
         )
         response = None
         while response is None:
             try:
-                _status, response = yt_req.next_chunk()
+                _, response = yt_req.next_chunk()
             except HttpError as e:
-                print(f"[ERROR] YouTube HttpError: {e}")
                 return {"status": "error", "message": str(e)}
 
         print(f"[INFO] YouTube 업로드 완료: {response['id']}")
-        return {
-            "status": "success",
-            "video_id": response["id"],
-            "url": f"https://www.youtube.com/watch?v={response['id']}"
-        }
+        return {"status": "success", "video_id": response["id"],
+                "url": f"https://www.youtube.com/watch?v={response['id']}"}
     except Exception as e:
-        print(f"[ERROR] upload_to_youtube 실패: {e}")
-        print(traceback.format_exc())
+        print(f"[ERROR] upload_to_youtube: {e}")
         return {"status": "error", "message": str(e)}
 
 
-# ── 유틸 ──────────────────────────────────────────────────────────────────────
+# ── 유틸 ─────────────────────────────────────────────────────────────────────
 
 def clean_filename(text):
-    text = re.sub(r'[\\/*?:"<>|]', "", text)
-    return text[:30].strip()
+    return re.sub(r'[\\/*?:"<>|]', "", text)[:30].strip()
 
 
 def video_package_json():
-    """AI로 영상 패키지 JSON 생성"""
     prompt = """
 유튜브 쇼츠/릴스용 30초 영상 데이터를 JSON 형식으로 정확하게 생성해줘.
 
@@ -353,30 +329,79 @@ def video_package_json():
 
 JSON 외에 다른 텍스트는 절대 포함하지 말것!
 """
-    print("[INFO] video_package_json: AI 콘텐츠 생성 요청 중...")
+    print("[INFO] video_package_json: AI 요청 중...")
     response = ask_ai(prompt, 800)
-
     if not response:
         print("[ERROR] video_package_json: AI 응답 없음")
         return None
-
     try:
-        json_start = response.find("{")
-        json_end = response.rfind("}") + 1
-        if json_start < 0 or json_end <= 0:
-            print(f"[ERROR] video_package_json: JSON 구조 없음. 원문:\n{response}")
+        s = response.find("{")
+        e = response.rfind("}") + 1
+        if s < 0 or e <= 0:
+            print(f"[ERROR] video_package_json: JSON 없음. 원문:\n{response}")
             return None
-        json_str = response[json_start:json_end]
-        data = json.loads(json_str)
-        print(f"[INFO] video_package_json: 파싱 성공 - 제목: {data.get('title')}")
+        data = json.loads(response[s:e])
+        print(f"[INFO] video_package_json: 파싱 성공 - {data.get('title')}")
         return data
     except json.JSONDecodeError as e:
-        print(f"[ERROR] video_package_json: JSON 파싱 실패 - {e}")
-        print(f"[ERROR] 파싱 시도 문자열:\n{response}")
+        print(f"[ERROR] video_package_json: JSON 파싱 실패 - {e}\n원문:\n{response}")
         return None
 
 
-# ── 라우트 ────────────────────────────────────────────────────────────────────
+# ── 백그라운드 작업 실행기 ────────────────────────────────────────────────────
+
+def _run_video_job(job_id: str) -> None:
+    """영상 제작 파이프라인 - 백그라운드 스레드에서 실행"""
+    try:
+        _update_job(job_id, status="running")
+
+        # Step 1: AI 콘텐츠 생성
+        _append_log(job_id, "1️⃣ AI 콘텐츠 생성 중...")
+        content_data = video_package_json()
+        if not content_data:
+            _append_log(job_id, "❌ 콘텐츠 생성 실패 (API 키 확인 필요: /debug)")
+            _update_job(job_id, status="error", error="AI 콘텐츠 생성 실패")
+            return
+        _append_log(job_id, f"✅ 콘텐츠 완료: {content_data.get('title')}")
+        _update_job(job_id, content=content_data)
+
+        # Step 2: 이미지 + 영상 생성
+        _append_log(job_id, "2️⃣ DALL-E 이미지 생성 중...")
+        video_path = create_simple_video(content_data)
+        if not video_path:
+            _append_log(job_id, "❌ 영상 생성 실패 (ffmpeg/DALL-E 확인 필요)")
+            _update_job(job_id, status="error",
+                        error="영상 생성 실패", content=content_data)
+            return
+        _append_log(job_id, f"✅ 영상 완료: {video_path}")
+        _update_job(job_id, video_path=video_path)
+
+        # Step 3: YouTube 업로드
+        _append_log(job_id, "3️⃣ YouTube 업로드 시도 중...")
+        upload = upload_to_youtube(
+            video_path,
+            content_data.get("title", ""),
+            content_data.get("description", ""),
+            content_data.get("tags", [])
+        )
+        if upload.get("status") == "success":
+            _append_log(job_id, f"✅ YouTube 업로드 완료!\n🔗 {upload.get('url')}")
+        elif upload.get("status") == "auth_required":
+            _append_log(job_id, "⚠️ YouTube 인증 필요 - 영상은 서버에 저장됨")
+        elif upload.get("status") == "skipped":
+            _append_log(job_id, "💾 YouTube 업로드 건너뜀 (Google 패키지 미설치)")
+        else:
+            _append_log(job_id, f"⚠️ YouTube 업로드 실패: {upload.get('message')}")
+
+        _update_job(job_id, status="done", youtube=upload)
+
+    except Exception as e:
+        print(f"[ERROR] Job {job_id} 예외: {e}\n{traceback.format_exc()}")
+        _append_log(job_id, f"❌ 예외 발생: {e}")
+        _update_job(job_id, status="error", error=str(e))
+
+
+# ── 라우트 ───────────────────────────────────────────────────────────────────
 
 @app.route("/", methods=["GET", "POST"])
 def home():
@@ -385,48 +410,10 @@ def home():
 
     if request.method == "POST":
         question = request.form.get("question", "").strip()
-
         if question:
-            answer = None
-
             if question == "VIDEO_PACKAGE":
-                answer = "🎬 영상 자동 생성 중...\n"
-                answer += "1️⃣ Claude가 콘텐츠 생성\n"
-                answer += "2️⃣ DALL-E가 이미지 생성\n"
-                answer += "3️⃣ FFmpeg가 영상 편집\n"
-                answer += "4️⃣ YouTube 업로드 준비\n\n"
-                try:
-                    content_data = video_package_json()
-                    if content_data:
-                        answer += f"📋 콘텐츠 생성 완료!\n"
-                        answer += f"제목: {content_data.get('title')}\n"
-                        answer += f"설명: {content_data.get('description')}\n"
-                        answer += f"태그: {', '.join(content_data.get('tags', []))}\n\n"
-
-                        video_path = create_simple_video(content_data)
-                        if video_path:
-                            answer += f"✅ 영상 생성 완료!\n📁 {video_path}\n\n"
-                            upload_result = upload_to_youtube(
-                                video_path,
-                                content_data.get("title", ""),
-                                content_data.get("description", ""),
-                                content_data.get("tags", [])
-                            )
-                            if upload_result.get("status") == "success":
-                                answer += f"🎉 YouTube 업로드 완료!\n🔗 {upload_result.get('url')}\n"
-                            elif upload_result.get("status") == "auth_required":
-                                answer += "⚠️ YouTube 인증 필요 (토큰 없음)\n"
-                            else:
-                                answer += "💾 영상 생성됨 (YouTube 업로드 대기)\n"
-                        else:
-                            answer += "❌ 영상 생성 실패 (ffmpeg 또는 이미지 API 확인 필요)\n"
-                    else:
-                        answer += "❌ 콘텐츠 생성 실패 (AI API 키 확인: /debug)\n"
-                except Exception as e:
-                    answer += f"❌ 오류: {str(e)}\n"
-                    print(f"[ERROR] VIDEO_PACKAGE 예외: {e}")
-                    print(traceback.format_exc())
-
+                # 버튼이 JS로 처리되지만 form submit 폴백도 안내
+                answer = "🎬 영상 제작은 백그라운드로 실행됩니다.\n버튼 클릭 시 자동으로 진행 상황이 업데이트됩니다."
             elif question == "GET_TRENDS":
                 answer = ask_ai("글로벌 SNS에서 주목받을 쇼츠/릴스 트렌드 5개를 추천해줘.", 800)
             elif question == "MAKE_SHORTS":
@@ -444,13 +431,11 @@ def home():
             else:
                 answer = ask_ai(question, 800)
 
-            # AI 실패 시 사용자에게 명확히 알림
             if not answer:
-                answer = "⚠️ AI 응답 실패. /debug 에서 API 키 설정 여부를 확인해주세요."
+                answer = "⚠️ AI 응답 실패. /debug 에서 API 키를 확인하세요."
 
-            session["history"].append({"role": "user", "content": question})
-            session["history"].append({"role": "assistant", "content": answer})
-            # 쿠키 크기 초과 방지 - 최근 MAX_HISTORY개만 유지
+            session["history"].append({"role": "user",    "content": question})
+            session["history"].append({"role": "assistant","content": answer})
             if len(session["history"]) > MAX_HISTORY:
                 session["history"] = session["history"][-MAX_HISTORY:]
             session.modified = True
@@ -458,85 +443,111 @@ def home():
     return render_template("index.html", history=session.get("history", []))
 
 
+@app.route("/start-video", methods=["POST"])
+def start_video():
+    """영상 제작 백그라운드 작업 시작 → 즉시 job_id 반환"""
+    _cleanup_old_jobs()
+    job_id = uuid.uuid4().hex[:12]
+    with _jobs_lock:
+        _jobs[job_id] = {
+            "status": "queued",
+            "logs": ["⏳ 작업 대기 중..."],
+            "created_at": datetime.now().isoformat(),
+            "content": None,
+            "video_path": None,
+            "youtube": None,
+            "error": None
+        }
+    t = threading.Thread(target=_run_video_job, args=(job_id,), daemon=True)
+    t.start()
+    print(f"[INFO] 백그라운드 작업 시작: {job_id}")
+    return jsonify({"job_id": job_id, "status": "queued"}), 202
+
+
+@app.route("/status/<job_id>", methods=["GET"])
+def job_status(job_id):
+    """작업 진행 상황 폴링"""
+    job = _get_job(job_id)
+    if not job:
+        return jsonify({"error": "작업을 찾을 수 없습니다"}), 404
+    return jsonify(job), 200
+
+
+@app.route("/save-chat", methods=["POST"])
+def save_chat():
+    """완료된 작업 결과를 채팅 히스토리에 저장"""
+    data = request.get_json(silent=True) or {}
+    user_msg = data.get("user", "")
+    asst_msg = data.get("assistant", "")
+    if not user_msg or not asst_msg:
+        return jsonify({"error": "user/assistant 필드 필요"}), 400
+
+    if "history" not in session:
+        session["history"] = []
+    session["history"].append({"role": "user",     "content": user_msg})
+    session["history"].append({"role": "assistant", "content": asst_msg})
+    if len(session["history"]) > MAX_HISTORY:
+        session["history"] = session["history"][-MAX_HISTORY:]
+    session.modified = True
+    return jsonify({"status": "ok"}), 200
+
+
 @app.route("/video-package", methods=["GET", "POST"])
 def video_package():
-    """영상 패키지 생성 전용 JSON API"""
-    print("[INFO] /video-package 요청 시작")
+    """영상 패키지 생성 JSON API (동기 - 직접 호출용)"""
+    print("[INFO] /video-package 동기 요청 시작")
     try:
         content_data = video_package_json()
         if not content_data:
-            return jsonify({"status": "error", "step": "content_generation",
-                            "message": "AI 콘텐츠 생성 실패 - API 키 확인 필요"}), 500
-
+            return jsonify({"status": "error", "step": "content",
+                            "message": "AI 콘텐츠 생성 실패"}), 500
         video_path = create_simple_video(content_data)
         if not video_path:
-            return jsonify({
-                "status": "partial",
-                "step": "video_creation",
-                "message": "영상 생성 실패 (ffmpeg 또는 DALL-E 확인 필요)",
-                "content": content_data
-            }), 500
-
-        upload_result = upload_to_youtube(
+            return jsonify({"status": "partial", "step": "video",
+                            "message": "영상 생성 실패", "content": content_data}), 500
+        upload = upload_to_youtube(
             video_path,
             content_data.get("title", ""),
             content_data.get("description", ""),
             content_data.get("tags", [])
         )
-        return jsonify({
-            "status": "success",
-            "video_path": video_path,
-            "content": content_data,
-            "youtube": upload_result
-        }), 200
-
+        return jsonify({"status": "success", "video_path": video_path,
+                        "content": content_data, "youtube": upload}), 200
     except Exception as e:
-        print(f"[ERROR] /video-package 예외: {e}")
-        print(traceback.format_exc())
+        print(f"[ERROR] /video-package: {e}\n{traceback.format_exc()}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route("/auto-create", methods=["GET"])
 def auto_create():
-    """자동 콘텐츠 + 영상 생성 (키 인증 필요)"""
+    auth_key = request.args.get("key")
+    if auth_key != os.getenv("AUTO_KEY", "secret123"):
+        return {"status": "error", "message": "Unauthorized"}, 401
+
+    results = []
     try:
-        auth_key = request.args.get("key")
-        if auth_key != os.getenv("AUTO_KEY", "secret123"):
-            return {"status": "error", "message": "Unauthorized"}, 401
-
-        results = []
-        try:
-            content_data = video_package_json()
-            if content_data:
-                video_path = create_simple_video(content_data)
-                if video_path:
-                    results.append("✅ 영상 생성 완료")
-                    upload_result = upload_to_youtube(
-                        video_path,
-                        content_data.get("title"),
-                        content_data.get("description"),
-                        content_data.get("tags", [])
-                    )
-                    if upload_result.get("status") == "success":
-                        results.append(f"✅ YouTube 업로드: {upload_result.get('url')}")
-                    else:
-                        results.append("✅ 영상 준비 완료 (YouTube 업로드 대기)")
+        content_data = video_package_json()
+        if content_data:
+            video_path = create_simple_video(content_data)
+            if video_path:
+                results.append("✅ 영상 생성 완료")
+                upload = upload_to_youtube(video_path, content_data.get("title"),
+                                           content_data.get("description"),
+                                           content_data.get("tags", []))
+                if upload.get("status") == "success":
+                    results.append(f"✅ YouTube: {upload.get('url')}")
                 else:
-                    results.append("❌ 영상 생성 실패")
+                    results.append("✅ 영상 준비 완료 (YouTube 업로드 대기)")
             else:
-                results.append("❌ 콘텐츠 생성 실패")
-        except Exception as e:
-            results.append(f"❌ 오류: {str(e)}")
-
-        return {
-            "status": "success",
-            "message": "\n".join(results),
-            "timestamp": datetime.now().isoformat(),
-            "count": len([r for r in results if r.startswith("✅")])
-        }, 200
-
+                results.append("❌ 영상 생성 실패")
+        else:
+            results.append("❌ 콘텐츠 생성 실패")
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        results.append(f"❌ 오류: {e}")
+
+    return {"status": "success", "message": "\n".join(results),
+            "timestamp": datetime.now().isoformat(),
+            "count": sum(1 for r in results if r.startswith("✅"))}, 200
 
 
 @app.route("/health", methods=["GET"])
@@ -546,58 +557,49 @@ def health():
 
 @app.route("/debug", methods=["GET"])
 def debug():
-    """환경 진단 엔드포인트"""
-    import anthropic as _anthropic_mod
-    import openai as _openai_mod
-
-    ffmpeg_ok = False
-    ffmpeg_ver = None
+    import anthropic as _am, openai as _om
+    ffmpeg_ok, ffmpeg_ver = False, None
     try:
-        r = subprocess.run(["ffmpeg", "-version"],
-                           capture_output=True, text=True, timeout=5)
+        r = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, timeout=5)
         ffmpeg_ok = r.returncode == 0
-        ffmpeg_ver = r.stdout.splitlines()[0] if ffmpeg_ok else r.stderr.splitlines()[0]
+        ffmpeg_ver = (r.stdout if ffmpeg_ok else r.stderr).splitlines()[0]
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "anthropic_key_set": bool(os.getenv("ANTHROPIC_API_KEY")),
-        "anthropic_client_ok": claude_client is not None,
-        "anthropic_sdk_version": getattr(_anthropic_mod, "__version__", "unknown"),
-        "openai_key_set": bool(os.getenv("OPENAI_API_KEY")),
-        "openai_client_ok": openai_client is not None,
-        "openai_sdk_version": getattr(_openai_mod, "__version__", "unknown"),
-        "google_available": GOOGLE_AVAILABLE,
-        "ffmpeg_available": ffmpeg_ok,
-        "ffmpeg_version": ffmpeg_ver,
-        "python_version": __import__("sys").version,
-        "timestamp": datetime.now().isoformat()
+        "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
+        "anthropic_client_ok":   claude_client is not None,
+        "anthropic_sdk_version": getattr(_am, "__version__", "unknown"),
+        "openai_key_set":        bool(os.getenv("OPENAI_API_KEY")),
+        "openai_client_ok":      openai_client is not None,
+        "openai_sdk_version":    getattr(_om, "__version__", "unknown"),
+        "google_available":      GOOGLE_AVAILABLE,
+        "ffmpeg_available":      ffmpeg_ok,
+        "ffmpeg_version":        ffmpeg_ver,
+        "active_jobs":           len(_jobs),
+        "python_version":        __import__("sys").version,
+        "timestamp":             datetime.now().isoformat()
     }), 200
 
 
 @app.route("/test-ai", methods=["GET"])
 def test_ai():
-    """AI API 직접 테스트 엔드포인트"""
     result = {}
-
-    # Claude 테스트
     try:
         if not claude_client:
-            result["claude"] = {"status": "error", "message": "클라이언트 미초기화 (ANTHROPIC_API_KEY 확인)"}
+            result["claude"] = {"status": "error", "message": "클라이언트 미초기화"}
         else:
             msg = claude_client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=30,
+                model="claude-sonnet-4-6", max_tokens=30,
                 messages=[{"role": "user", "content": "hi"}]
             )
             result["claude"] = {"status": "ok", "response": msg.content[0].text}
     except Exception as e:
         result["claude"] = {"status": "error", "message": str(e)}
 
-    # ChatGPT 테스트
     try:
         if not openai_client:
-            result["chatgpt"] = {"status": "error", "message": "클라이언트 미초기화 (OPENAI_API_KEY 확인)"}
+            result["chatgpt"] = {"status": "error", "message": "클라이언트 미초기화"}
         else:
             resp = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
