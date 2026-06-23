@@ -22,7 +22,10 @@ import os
 import json
 import sys
 
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+]
 CLIENT_SECRET = "client_secret.json"
 TOKEN_FILE = "youtube_token.json"
 
