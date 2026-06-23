@@ -126,19 +126,18 @@ def ask_ai(user_prompt, max_tokens=1024, prefer_claude=True):
 
 
 def generate_image_dalle(prompt):
-    """DALL-E로 이미지 생성"""
+    """DALL-E 2로 이미지 생성"""
     try:
-        print(f"[INFO] DALL-E 이미지 생성 시작: {prompt[:80]}...")
+        print(f"[INFO] DALL-E 2 이미지 생성 시작: {prompt[:80]}...")
         response = openai_client.images.generate(
             prompt=prompt,
-            model="dall-e-3",
+            model="dall-e-2",
             size="1024x1024",
-            quality="standard",
             n=1
         )
 
         image_url = response.data[0].url
-        print(f"[INFO] DALL-E 이미지 URL 획득: {image_url[:60]}...")
+        print(f"[INFO] DALL-E 2 이미지 URL 획득: {image_url[:60]}...")
         img_data = requests.get(image_url, timeout=30).content
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         image_path = os.path.join(IMAGES_DIR, f"image_{timestamp}.png")
@@ -189,13 +188,11 @@ def create_simple_video(content_data):
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # 이미지 생성
+        # 이미지 생성 (실패해도 텍스트 배경으로 계속 진행)
         image_prompt = content_data.get('image_prompt', 'Professional video thumbnail')
         image_path = generate_image_dalle(image_prompt)
-
         if not image_path:
-            print("[ERROR] create_simple_video: 이미지 생성 실패로 영상 생성 중단")
-            return None
+            print("[WARN] create_simple_video: 이미지 생성 실패 - 단색 배경으로 대체 진행")
 
         # 음성은 현재 비활성화 상태
         audio_path = None
@@ -211,7 +208,7 @@ def create_simple_video(content_data):
             print("[ERROR] create_simple_video: ffmpeg를 찾을 수 없음. PATH를 확인하세요.")
             return None
 
-        if audio_path:
+        if image_path and audio_path:
             try:
                 probe = subprocess.run(
                     ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
@@ -232,7 +229,8 @@ def create_simple_video(content_data):
                 '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2',
                 video_path
             ]
-        else:
+        elif image_path:
+            # 이미지 있고 오디오 없음
             cmd = [
                 'ffmpeg', '-y',
                 '-loop', '1', '-i', image_path,
@@ -240,6 +238,17 @@ def create_simple_video(content_data):
                 '-t', '10',
                 '-pix_fmt', 'yuv420p',
                 '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2',
+                video_path
+            ]
+        else:
+            # 이미지도 없음 - lavfi 단색 배경으로 생성
+            print("[INFO] create_simple_video: 이미지 없이 단색 배경 영상 생성")
+            cmd = [
+                'ffmpeg', '-y',
+                '-f', 'lavfi', '-i', 'color=c=0x1a1a2e:size=1080x1920:rate=30',
+                '-c:v', 'libx264',
+                '-t', '10',
+                '-pix_fmt', 'yuv420p',
                 video_path
             ]
 
