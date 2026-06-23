@@ -3,299 +3,725 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>JARVIS-X</title>
+<title>JARVIS-X // AI AUTOMATION SYSTEM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600&display=swap" rel="stylesheet">
 
 <style>
-body{
-    margin:0;
-    background:#f4f6f9;
-    font-family:Arial, sans-serif;
+/* ── Reset & Base ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --cyan:    #00d4ff;
+    --purple:  #7b2ff7;
+    --pink:    #ff0080;
+    --green:   #00ff9f;
+    --bg:      #050510;
+    --panel:   rgba(0, 212, 255, 0.04);
+    --border:  rgba(0, 212, 255, 0.25);
+    --text:    #c8e8ff;
+    --dim:     rgba(0, 212, 255, 0.5);
 }
 
-.container{
-    width:95%;
-    max-width:1100px;
-    margin:auto;
-    padding:20px;
+html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 16px;
+    overflow-x: hidden;
 }
 
-h1{
-    text-align:center;
+/* ── Star Canvas ──────────────────────────────────────────────── */
+#starCanvas {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
 }
 
-.sub-title{
-    text-align:center;
-    color:#666;
-    margin-bottom:20px;
+/* ── Scanline overlay ─────────────────────────────────────────── */
+body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.12) 2px,
+        rgba(0, 0, 0, 0.12) 4px
+    );
 }
 
-.chat-box{
-    background:white;
-    height:620px;
-    overflow-y:auto;
-    border-radius:15px;
-    padding:20px;
-    box-shadow:0 0 15px rgba(0,0,0,0.1);
+/* ── Grid background ──────────────────────────────────────────── */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(rgba(0, 212, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.04) 1px, transparent 1px);
+    background-size: 48px 48px;
 }
 
-.user{
-    text-align:right;
-    margin:12px 0;
+/* ── Layout ───────────────────────────────────────────────────── */
+.container {
+    position: relative;
+    z-index: 2;
+    width: 95%;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 20px 32px;
 }
 
-.ai{
-    text-align:left;
-    margin:12px 0;
+/* ── Title block ──────────────────────────────────────────────── */
+.title-block {
+    text-align: center;
+    padding: 28px 0 18px;
 }
 
-.bubble-user{
-    display:inline-block;
-    background:#0b84ff;
-    color:white;
-    padding:12px 16px;
-    border-radius:18px;
-    max-width:75%;
-    word-break:break-word;
+.title-logo {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: clamp(2rem, 6vw, 3.6rem);
+    letter-spacing: 0.15em;
+    color: var(--cyan);
+    text-shadow:
+        0 0 10px var(--cyan),
+        0 0 30px var(--cyan),
+        0 0 60px rgba(0, 212, 255, 0.4);
+    animation: glowPulse 3s ease-in-out infinite;
 }
 
-.bubble-ai{
-    display:inline-block;
-    background:#e9ecef;
-    color:black;
-    padding:12px 16px;
-    border-radius:18px;
-    max-width:75%;
-    white-space:pre-line;
-    word-break:break-word;
+.title-logo span { color: var(--purple); text-shadow: 0 0 20px var(--purple), 0 0 50px var(--purple); }
+
+.title-sub {
+    margin-top: 8px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.82rem;
+    color: var(--dim);
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    animation: blink-cursor 1s step-end infinite;
 }
 
-.quick-buttons{
-    margin-top:15px;
-    margin-bottom:15px;
-    display:flex;
-    flex-wrap:wrap;
-    gap:8px;
+.title-sub::after { content: '█'; margin-left: 4px; opacity: 0.7; }
+
+.title-accent {
+    margin: 14px auto 0;
+    width: 220px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--cyan), var(--purple), transparent);
+    animation: accentSlide 4s ease-in-out infinite;
 }
 
-.quick-buttons form{
-    display:inline;
+/* ── Chat Panel ───────────────────────────────────────────────── */
+.chat-panel {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    backdrop-filter: blur(12px);
+    box-shadow:
+        0 0 0 1px rgba(0,212,255,0.08),
+        0 0 40px rgba(0,212,255,0.06),
+        inset 0 0 60px rgba(0,0,0,0.3);
+    overflow: hidden;
 }
 
-.quick-buttons button{
-    padding:10px 14px;
-    border:none;
-    border-radius:10px;
-    cursor:pointer;
-    background:#ffffff;
-    box-shadow:0 0 5px rgba(0,0,0,0.15);
+/* corner decorations */
+.chat-panel::before, .chat-panel::after {
+    content: '';
+    position: absolute;
+    width: 16px; height: 16px;
+    border-color: var(--cyan);
+    border-style: solid;
+    z-index: 3;
+}
+.chat-panel::before { top: 0; left: 0; border-width: 2px 0 0 2px; }
+.chat-panel::after  { bottom: 0; right: 0; border-width: 0 2px 2px 0; }
+
+.chat-panel-inner-tl, .chat-panel-inner-br {
+    position: absolute;
+    width: 16px; height: 16px;
+    border-color: var(--purple);
+    border-style: solid;
+    z-index: 3;
+}
+.chat-panel-inner-tl { top: 0; right: 0; border-width: 2px 2px 0 0; }
+.chat-panel-inner-br { bottom: 0; left: 0; border-width: 0 0 2px 2px; }
+
+.chat-header {
+    padding: 10px 18px;
+    border-bottom: 1px solid rgba(0,212,255,0.15);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0,212,255,0.05);
 }
 
-.quick-buttons button:hover{
-    background:#e9ecef;
+.chat-header-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    animation: pingDot 2s ease-in-out infinite;
+}
+.dot-green { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.dot-cyan  { background: var(--cyan);  box-shadow: 0 0 8px var(--cyan); animation-delay: .4s; }
+.dot-purple{ background: var(--purple);box-shadow: 0 0 8px var(--purple); animation-delay: .8s; }
+
+.chat-header-label {
+    margin-left: 4px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--dim);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
 }
 
-.video-pkg-btn{
-    background:#0b84ff !important;
-    color:#fff !important;
-    font-weight:bold;
+.chat-box {
+    height: 540px;
+    overflow-y: auto;
+    padding: 20px 20px 12px;
+    scroll-behavior: smooth;
 }
 
-.video-pkg-btn:hover{
-    background:#0066cc !important;
+.chat-box::-webkit-scrollbar { width: 4px; }
+.chat-box::-webkit-scrollbar-track { background: transparent; }
+.chat-box::-webkit-scrollbar-thumb {
+    background: linear-gradient(var(--cyan), var(--purple));
+    border-radius: 2px;
 }
 
-.video-pkg-btn.running{
-    background:#ff9500 !important;
-    cursor:not-allowed;
+/* ── Message Bubbles ──────────────────────────────────────────── */
+.user { text-align: right; margin: 14px 0; animation: fadeInRight .3s ease; }
+.ai   { text-align: left;  margin: 14px 0; animation: fadeInLeft  .3s ease; }
+
+.bubble-user {
+    display: inline-block;
+    background: linear-gradient(135deg, rgba(0,212,255,0.15), rgba(0,212,255,0.08));
+    color: #e8f8ff;
+    border: 1px solid rgba(0,212,255,0.4);
+    padding: 12px 18px;
+    border-radius: 2px 18px 18px 18px;
+    max-width: 74%;
+    word-break: break-word;
+    font-size: 0.95rem;
+    box-shadow: 0 0 12px rgba(0,212,255,0.15), inset 0 0 20px rgba(0,212,255,0.05);
+    position: relative;
+}
+.bubble-user::before {
+    content: '▶';
+    position: absolute;
+    right: -18px; top: 4px;
+    font-size: 0.55rem;
+    color: var(--cyan);
+    opacity: 0.6;
 }
 
-.progress-bubble{
-    white-space:pre-line;
-    border-left:3px solid #0b84ff;
+.bubble-ai {
+    display: inline-block;
+    background: linear-gradient(135deg, rgba(123,47,247,0.12), rgba(123,47,247,0.06));
+    color: #e8e0ff;
+    border: 1px solid rgba(123,47,247,0.35);
+    padding: 12px 18px;
+    border-radius: 18px 18px 18px 2px;
+    max-width: 74%;
+    white-space: pre-line;
+    word-break: break-word;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    box-shadow: 0 0 12px rgba(123,47,247,0.15), inset 0 0 20px rgba(123,47,247,0.05);
 }
 
-.input-area{
-    display:flex;
-    margin-top:15px;
+.progress-bubble {
+    border-color: rgba(0,255,159,0.4) !important;
+    background: linear-gradient(135deg, rgba(0,255,159,0.08), rgba(0,212,255,0.06)) !important;
+    box-shadow: 0 0 15px rgba(0,255,159,0.12) !important;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.82rem;
+    line-height: 1.8;
 }
 
-.input-area input{
-    flex:1;
-    padding:14px;
-    font-size:16px;
-    border:1px solid #ccc;
-    border-radius:10px;
+/* ── Quick Buttons ────────────────────────────────────────────── */
+.quick-buttons {
+    margin: 16px 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
 }
 
-.input-area button{
-    width:120px;
-    margin-left:10px;
-    border:none;
-    border-radius:10px;
-    background:#0b84ff;
-    color:white;
-    font-size:16px;
-    cursor:pointer;
+.quick-buttons form { display: inline; }
+
+.btn-neon {
+    padding: 9px 15px;
+    background: rgba(0,0,0,0.6);
+    color: var(--cyan);
+    border: 1px solid rgba(0,212,255,0.3);
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    transition: all .2s ease;
+    position: relative;
+    overflow: hidden;
 }
 
-.loading{
-    display:none;
-    margin-top:10px;
-    font-weight:bold;
-    color:#333;
+.btn-neon::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(0,212,255,0.1), transparent);
+    opacity: 0;
+    transition: opacity .2s;
 }
 
-.reset-link{
-    text-decoration:none;
+.btn-neon:hover {
+    border-color: var(--cyan);
+    color: #fff;
+    box-shadow: 0 0 14px rgba(0,212,255,0.35), inset 0 0 14px rgba(0,212,255,0.08);
+    transform: translateY(-1px);
+}
+.btn-neon:hover::before { opacity: 1; }
+
+/* 영상 제작 패키지 버튼 */
+.video-pkg-btn {
+    color: #fff !important;
+    border-color: var(--purple) !important;
+    background: linear-gradient(135deg, rgba(123,47,247,0.3), rgba(123,47,247,0.15)) !important;
+    box-shadow: 0 0 16px rgba(123,47,247,0.3) !important;
+    font-weight: 700 !important;
+}
+.video-pkg-btn:hover {
+    box-shadow: 0 0 28px rgba(123,47,247,0.6), inset 0 0 20px rgba(123,47,247,0.2) !important;
+    border-color: #a060ff !important;
+}
+
+.video-pkg-btn.running {
+    color: #fff !important;
+    border-color: var(--pink) !important;
+    background: linear-gradient(135deg, rgba(255,0,128,0.25), rgba(255,0,128,0.1)) !important;
+    box-shadow: 0 0 20px rgba(255,0,128,0.4), inset 0 0 20px rgba(255,0,128,0.1) !important;
+    cursor: not-allowed !important;
+    animation: runningPulse 1.2s ease-in-out infinite !important;
+}
+
+/* 초기화 버튼 */
+.btn-reset {
+    color: rgba(255,100,100,0.8) !important;
+    border-color: rgba(255,80,80,0.3) !important;
+}
+.btn-reset:hover {
+    color: #ff6464 !important;
+    border-color: rgba(255,80,80,0.7) !important;
+    box-shadow: 0 0 14px rgba(255,80,80,0.3) !important;
+}
+
+/* ── Input Area ───────────────────────────────────────────────── */
+.input-area {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+    align-items: stretch;
+}
+
+.input-wrap {
+    flex: 1;
+    position: relative;
+}
+
+.input-wrap::before {
+    content: '// INPUT ›';
+    position: absolute;
+    left: 14px; top: 50%;
+    transform: translateY(-50%);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.72rem;
+    color: rgba(0,212,255,0.35);
+    pointer-events: none;
+    transition: opacity .2s;
+}
+.input-wrap:focus-within::before { opacity: 0; }
+
+.input-area input {
+    width: 100%;
+    padding: 14px 16px 14px 90px;
+    background: rgba(0,0,0,0.6);
+    color: var(--text);
+    border: 1px solid rgba(0,212,255,0.3);
+    border-radius: 3px;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1rem;
+    font-weight: 400;
+    outline: none;
+    transition: all .25s;
+    caret-color: var(--cyan);
+}
+.input-area input:focus {
+    border-color: var(--cyan);
+    box-shadow: 0 0 18px rgba(0,212,255,0.2), inset 0 0 12px rgba(0,212,255,0.05);
+    padding-left: 16px;
+}
+.input-area input::placeholder { color: rgba(200,232,255,0.2); }
+
+.btn-send {
+    padding: 14px 24px;
+    background: linear-gradient(135deg, rgba(0,212,255,0.25), rgba(123,47,247,0.2));
+    color: #fff;
+    border: 1px solid rgba(0,212,255,0.5);
+    border-radius: 3px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    cursor: pointer;
+    transition: all .2s;
+    white-space: nowrap;
+}
+.btn-send:hover {
+    box-shadow: 0 0 22px rgba(0,212,255,0.4), inset 0 0 16px rgba(0,212,255,0.1);
+    border-color: var(--cyan);
+    transform: translateY(-1px);
+}
+
+/* ── Loading ──────────────────────────────────────────────────── */
+.loading {
+    display: none;
+    margin-top: 12px;
+    text-align: center;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.82rem;
+    color: var(--cyan);
+    letter-spacing: 0.2em;
+    animation: glowPulse 1s ease-in-out infinite;
+}
+
+/* ── Status Bar ───────────────────────────────────────────────── */
+.status-bar {
+    margin-top: 14px;
+    padding: 6px 14px;
+    border-top: 1px solid rgba(0,212,255,0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.status-bar-text {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.68rem;
+    color: rgba(0,212,255,0.3);
+    letter-spacing: 0.15em;
+}
+
+/* ── Keyframes ────────────────────────────────────────────────── */
+@keyframes glowPulse {
+    0%,100% { opacity: 1; text-shadow: 0 0 10px var(--cyan), 0 0 30px var(--cyan), 0 0 60px rgba(0,212,255,0.4); }
+    50%      { opacity: .85; text-shadow: 0 0 6px var(--cyan), 0 0 16px var(--cyan), 0 0 40px rgba(0,212,255,0.2); }
+}
+@keyframes blink-cursor {
+    0%,100% { opacity: 1; }
+    50%      { opacity: 0; }
+}
+@keyframes accentSlide {
+    0%,100% { opacity: 0.7; transform: scaleX(1); }
+    50%      { opacity: 1;   transform: scaleX(1.15); }
+}
+@keyframes pingDot {
+    0%,100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.5; transform: scale(0.7); }
+}
+@keyframes runningPulse {
+    0%,100% { box-shadow: 0 0 20px rgba(255,0,128,0.4), inset 0 0 20px rgba(255,0,128,0.1) !important; }
+    50%      { box-shadow: 0 0 36px rgba(255,0,128,0.7), inset 0 0 30px rgba(255,0,128,0.2) !important; }
+}
+@keyframes fadeInRight {
+    from { opacity: 0; transform: translateX(18px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes fadeInLeft {
+    from { opacity: 0; transform: translateX(-18px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes floatUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Responsive ───────────────────────────────────────────────── */
+@media(max-width:600px){
+    .title-logo { font-size: 1.8rem; }
+    .chat-box   { height: 420px; }
+    .btn-send   { padding: 14px 14px; font-size: 0.7rem; }
+    .input-area input { font-size: 0.9rem; }
 }
 </style>
 </head>
 
 <body>
 
+<!-- Star particle canvas -->
+<canvas id="starCanvas"></canvas>
+
 <div class="container">
 
-    <h1>🚀 JARVIS-X</h1>
-    <div class="sub-title">
-        AI 콘텐츠 자동화 비서 · 월 10~50만원 부수입 목표
+    <!-- ── Title ── -->
+    <div class="title-block" style="animation:floatUp .8s ease;">
+        <div class="title-logo">JARVIS<span>-X</span></div>
+        <div class="title-sub">AI CONTENT AUTOMATION SYSTEM v2.0</div>
+        <div class="title-accent"></div>
     </div>
 
-    <div class="chat-box" id="chatBox">
+    <!-- ── Chat Panel ── -->
+    <div class="chat-panel" style="animation:floatUp .9s ease;">
+        <div class="chat-panel-inner-tl"></div>
+        <div class="chat-panel-inner-br"></div>
 
-        {% for item in history %}
+        <div class="chat-header">
+            <div class="chat-header-dot dot-green"></div>
+            <div class="chat-header-dot dot-cyan"></div>
+            <div class="chat-header-dot dot-purple"></div>
+            <span class="chat-header-label">// NEURAL LINK ACTIVE // SECURE CHANNEL //</span>
+        </div>
 
-            {% if item.role == "user" %}
+        <div class="chat-box" id="chatBox">
+
+            {% if not history %}
+            <div class="ai" style="margin-top:20px;">
+                <div class="bubble-ai">⟩ JARVIS-X 온라인 · 모든 시스템 정상 작동 중
+⟩ AI 콘텐츠 자동화 파이프라인 준비 완료
+⟩ 명령을 입력하거나 아래 퀵 버튼을 사용하세요</div>
+            </div>
+            {% endif %}
+
+            {% for item in history %}
+                {% if item.role == "user" %}
                 <div class="user">
-                    <div class="bubble-user">
-                        {{ item.content }}
-                    </div>
+                    <div class="bubble-user">{{ item.content }}</div>
                 </div>
-            {% endif %}
-
-            {% if item.role == "assistant" %}
+                {% endif %}
+                {% if item.role == "assistant" %}
                 <div class="ai">
-                    <div class="bubble-ai">
-                        {{ item.content }}
-                    </div>
+                    <div class="bubble-ai">{{ item.content }}</div>
                 </div>
-            {% endif %}
+                {% endif %}
+            {% endfor %}
 
-        {% endfor %}
-
+        </div>
     </div>
 
-    <div class="quick-buttons">
+    <!-- ── Quick Buttons ── -->
+    <div class="quick-buttons" style="animation:floatUp 1s ease;">
 
         <form method="POST">
-            <button type="submit" name="question" value="GET_TRENDS">
-                🔥 오늘의 트렌드
+            <button type="submit" name="question" value="GET_TRENDS" class="btn-neon">
+                🔥 트렌드
             </button>
         </form>
 
         <form method="POST">
-            <button type="submit" name="question" value="MAKE_SHORTS">
+            <button type="submit" name="question" value="MAKE_SHORTS" class="btn-neon">
                 🎬 쇼츠 생성
             </button>
         </form>
 
-        <button type="button" class="video-pkg-btn" onclick="startVideoPackage()">
+        <button type="button" class="btn-neon video-pkg-btn" onclick="startVideoPackage()">
             🎥 영상 제작 패키지
         </button>
 
         <form method="POST">
-            <button type="submit" name="question" value="CONTENT_PACKAGE">
+            <button type="submit" name="question" value="CONTENT_PACKAGE" class="btn-neon">
                 📦 콘텐츠 패키지
             </button>
         </form>
 
         <form method="POST">
-            <button type="submit" name="question" value="IMAGE_PROMPT">
+            <button type="submit" name="question" value="IMAGE_PROMPT" class="btn-neon">
                 🖼 이미지 프롬프트
             </button>
         </form>
 
         <form method="POST">
-            <button type="submit" name="question" value="MONEY_IDEAS">
+            <button type="submit" name="question" value="MONEY_IDEAS" class="btn-neon">
                 💰 수익 아이디어
             </button>
         </form>
 
         <form method="POST">
-            <button type="submit" name="question" value="AI_NEWS">
+            <button type="submit" name="question" value="AI_NEWS" class="btn-neon">
                 📰 AI 뉴스
             </button>
         </form>
 
         <form method="POST">
-            <button type="submit" name="question" value="GLOBAL_ISSUES">
+            <button type="submit" name="question" value="GLOBAL_ISSUES" class="btn-neon">
                 🌍 해외 이슈
             </button>
         </form>
 
-        <a href="/reset" class="reset-link">
-            <button type="button">
-                🗑 초기화
+        <a href="/reset" style="text-decoration:none;">
+            <button type="button" class="btn-neon btn-reset">
+                ⌫ 초기화
             </button>
         </a>
 
     </div>
 
-    <form method="POST" id="chatForm" class="input-area">
-
-        <input
-            type="text"
-            id="question"
-            name="question"
-            placeholder="예: AI로 자동 수익 만드는 방법 알려줘"
-            autocomplete="off"
-            required
-        >
-
-        <button type="submit">
-            전송
-        </button>
-
+    <!-- ── Input ── -->
+    <form method="POST" id="chatForm" class="input-area" style="animation:floatUp 1.1s ease;">
+        <div class="input-wrap">
+            <input
+                type="text"
+                id="question"
+                name="question"
+                placeholder="명령을 입력하세요 — AI로 자동 수익 만드는 방법은?"
+                autocomplete="off"
+                required
+            >
+        </div>
+        <button type="submit" class="btn-send">SEND ▶</button>
     </form>
 
+    <!-- ── Loading ── -->
     <div id="loading" class="loading">
-        🤖 JARVIS-X 생각중...
+        ⟩ JARVIS-X 처리 중&nbsp;&nbsp;█
+    </div>
+
+    <!-- ── Status bar ── -->
+    <div class="status-bar">
+        <span class="status-bar-text">SYS // ONLINE &nbsp;|&nbsp; MODEL: claude-sonnet-4-6 &nbsp;|&nbsp; PIPELINE: ACTIVE</span>
+        <span class="status-bar-text" id="clockDisplay"></span>
     </div>
 
 </div>
 
+<!-- ── Scripts ──────────────────────────────────────────────────── -->
 <script>
+/* ── Star Particles ─────────────────────────────────────────── */
+(function(){
+    const canvas = document.getElementById("starCanvas");
+    const ctx = canvas.getContext("2d");
+    let W, H, stars = [];
+
+    function resize(){
+        W = canvas.width  = window.innerWidth;
+        H = canvas.height = window.innerHeight;
+    }
+
+    function initStars(){
+        stars = [];
+        const count = Math.floor((W * H) / 6000);
+        for(let i = 0; i < count; i++){
+            stars.push({
+                x: Math.random() * W,
+                y: Math.random() * H,
+                r: Math.random() * 1.4 + 0.2,
+                speed: Math.random() * 0.3 + 0.05,
+                opacity: Math.random() * 0.7 + 0.1,
+                hue: Math.random() < 0.6 ? 195 : (Math.random() < 0.5 ? 270 : 160),
+                twinkle: Math.random() * Math.PI * 2
+            });
+        }
+    }
+
+    let frame = 0;
+    function draw(){
+        ctx.clearRect(0, 0, W, H);
+        frame++;
+        for(const s of stars){
+            s.twinkle += 0.015;
+            const alpha = s.opacity * (0.7 + 0.3 * Math.sin(s.twinkle));
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+            ctx.fillStyle = `hsla(${s.hue}, 100%, 80%, ${alpha})`;
+            ctx.fill();
+            // slow drift
+            s.y -= s.speed;
+            if(s.y < -2) { s.y = H + 2; s.x = Math.random() * W; }
+        }
+
+        // Occasional shooting star
+        if(frame % 280 === 0){
+            shootingStar();
+        }
+        requestAnimationFrame(draw);
+    }
+
+    function shootingStar(){
+        const sx = Math.random() * W * 0.7;
+        const sy = Math.random() * H * 0.4;
+        let len = 0;
+        const angle = Math.PI / 5;
+        const speed = 8;
+        const maxLen = 120 + Math.random() * 80;
+        function animate(){
+            len += speed;
+            ctx.save();
+            ctx.strokeStyle = `rgba(0,212,255,${Math.max(0, 0.9 - len / maxLen)})`;
+            ctx.lineWidth = 1.5;
+            ctx.shadowColor = "#00d4ff";
+            ctx.shadowBlur = 6;
+            ctx.beginPath();
+            ctx.moveTo(sx + len * Math.cos(angle), sy + len * Math.sin(angle));
+            ctx.lineTo(sx + (len - 30) * Math.cos(angle), sy + (len - 30) * Math.sin(angle));
+            ctx.stroke();
+            ctx.restore();
+            if(len < maxLen) requestAnimationFrame(animate);
+        }
+        animate();
+    }
+
+    window.addEventListener("resize", () => { resize(); initStars(); });
+    resize(); initStars(); draw();
+})();
+
+/* ── Clock ───────────────────────────────────────────────────── */
+(function(){
+    const el = document.getElementById("clockDisplay");
+    function update(){
+        const now = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        el.textContent = `${now.getFullYear()}.${pad(now.getMonth()+1)}.${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    }
+    update();
+    setInterval(update, 1000);
+})();
+
+/* ── Chat scroll ────────────────────────────────────────────── */
 const chatBox = document.getElementById("chatBox");
+if(chatBox) chatBox.scrollTop = chatBox.scrollHeight;
 
-if(chatBox){ chatBox.scrollTop = chatBox.scrollHeight; }
-
+/* ── Form helpers ────────────────────────────────────────────── */
 document.getElementById("question").addEventListener("keypress", function(e){
-    if(e.key === "Enter"){ document.getElementById("chatForm").submit(); }
+    if(e.key === "Enter") document.getElementById("chatForm").submit();
 });
-
 document.getElementById("chatForm").addEventListener("submit", function(){
     document.getElementById("loading").style.display = "block";
 });
-
 document.querySelectorAll(".quick-buttons form").forEach(function(form){
     form.addEventListener("submit", function(){
         document.getElementById("loading").style.display = "block";
     });
 });
 
-// ── 영상 제작 패키지 백그라운드 처리 ─────────────────────────────────────────
+/* ── Video Package ──────────────────────────────────────────── */
 let _videoPolling = null;
 
-function startVideoPackage() {
+function startVideoPackage(){
     const btn = document.querySelector(".video-pkg-btn");
-    if(btn.classList.contains("running")) return;  // 중복 실행 방지
+    if(btn.classList.contains("running")) return;
 
     btn.classList.add("running");
-    btn.textContent = "⏳ 실행 중...";
+    btn.textContent = "⟩ 실행 중...";
 
     // 사용자 버블
     const userDiv = document.createElement("div");
     userDiv.className = "user";
-    userDiv.innerHTML = '<div class="bubble-user">🎥 영상 제작 패키지</div>';
+    userDiv.innerHTML = '<div class="bubble-user">🎥 영상 제작 패키지 실행</div>';
     chatBox.appendChild(userDiv);
 
     // AI 진행 버블
@@ -303,7 +729,7 @@ function startVideoPackage() {
     aiDiv.className = "ai";
     const bubble = document.createElement("div");
     bubble.className = "bubble-ai progress-bubble";
-    bubble.textContent = "🎬 영상 제작 요청 중...";
+    bubble.textContent = "⟩ 파이프라인 초기화 중...";
     aiDiv.appendChild(bubble);
     chatBox.appendChild(aiDiv);
     chatBox.scrollTop = chatBox.scrollHeight;
@@ -312,7 +738,7 @@ function startVideoPackage() {
     .then(function(r){ return r.json(); })
     .then(function(data){
         const jobId = data.job_id;
-        bubble.textContent = "🎬 작업 시작됨 (ID: " + jobId + ")\n⏳ 3초마다 자동 업데이트...";
+        bubble.textContent = "⟩ JOB ID: " + jobId + "\n⟩ 백그라운드 실행 중 — 3초마다 갱신";
         chatBox.scrollTop = chatBox.scrollHeight;
 
         _videoPolling = setInterval(function(){
@@ -322,57 +748,51 @@ function startVideoPackage() {
                     clearInterval(_videoPolling);
                     btn.classList.remove("running");
                     btn.textContent = "🎥 영상 제작 패키지";
-                    bubble.textContent = "🔄 서버가 재시작되었습니다.\n버튼을 다시 클릭해서 새 작업을 시작해주세요.";
+                    bubble.textContent = "⟩ [WARN] 서버가 재시작되었습니다.\n⟩ 버튼을 다시 클릭해서 새 작업을 시작해주세요.";
                     chatBox.scrollTop = chatBox.scrollHeight;
                     return null;
                 }
                 return r.json();
             })
             .then(function(job){
-                if(!job) return;  // 404 already handled
-                const logs = (job.logs || []).join("\n");
+                if(!job) return;
+                const logs = (job.logs || []).map(l => "⟩ " + l).join("\n");
                 let msg = logs;
 
                 if(job.status === "done"){
                     clearInterval(_videoPolling);
                     btn.classList.remove("running");
                     btn.textContent = "🎥 영상 제작 패키지";
-
                     if(job.content){
-                        msg += "\n\n📋 제목: " + job.content.title;
-                        msg += "\n📝 설명: " + job.content.description;
-                        msg += "\n🏷 태그: " + (job.content.tags || []).join(", ");
+                        msg += "\n\n⟩ [TITLE]   " + job.content.title;
+                        msg += "\n⟩ [DESC]    " + job.content.description;
+                        msg += "\n⟩ [TAGS]    " + (job.content.tags || []).join(" / ");
                     }
                     if(job.youtube && job.youtube.status === "success"){
-                        msg += "\n🔗 " + job.youtube.url;
+                        msg += "\n⟩ [YOUTUBE] " + job.youtube.url;
                     }
-                    msg += "\n\n✨ 완료!";
-
-                    // 세션 히스토리에 저장
+                    msg += "\n\n⟩ ✅ PIPELINE COMPLETE";
                     fetch("/save-chat", {
                         method: "POST",
                         headers: {"Content-Type": "application/json"},
-                        body: JSON.stringify({user:"🎥 영상 제작 패키지", assistant: msg})
+                        body: JSON.stringify({user: "🎥 영상 제작 패키지", assistant: msg})
                     });
-
                 } else if(job.status === "error"){
                     clearInterval(_videoPolling);
                     btn.classList.remove("running");
                     btn.textContent = "🎥 영상 제작 패키지";
-                    msg += "\n\n❌ 오류: " + (job.error || "알 수 없는 오류");
-
+                    msg += "\n\n⟩ [ERROR] " + (job.error || "알 수 없는 오류");
                 } else {
-                    msg += "\n\n⏳ 진행 중... (자동 업데이트)";
+                    msg += "\n\n⟩ PROCESSING... (AUTO REFRESH)";
                 }
-
                 bubble.textContent = msg;
                 chatBox.scrollTop = chatBox.scrollHeight;
             })
-            .catch(function(){ /* 네트워크 오류 시 무시하고 계속 폴링 */ });
+            .catch(function(){ /* 네트워크 오류 무시, 계속 폴링 */ });
         }, 3000);
     })
     .catch(function(err){
-        bubble.textContent = "❌ 요청 실패: " + err.message;
+        bubble.textContent = "⟩ [ERROR] 요청 실패: " + err.message;
         btn.classList.remove("running");
         btn.textContent = "🎥 영상 제작 패키지";
     });
