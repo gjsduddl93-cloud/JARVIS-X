@@ -233,69 +233,15 @@ def create_simple_video(content_data):
             video_path
         ]
 
-        font_file = _find_korean_font()
-        print(f"[INFO] 폰트: {font_file or '없음'}")
-
-        if font_file:
-            # 텍스트 파일 작성 (절대경로)
-            def write_txt(name, text):
-                p = os.path.join(abs_images, f"{name}_{ts}.txt")
-                with open(p, "w", encoding="utf-8") as f:
-                    f.write(text)
-                return p
-
-            title    = content_data.get("title", "오늘의 콘텐츠")
-            narration = (content_data.get("narration") or
-                         content_data.get("description", ""))[:100]
-            tags     = "  ".join(f"#{t}" for t in content_data.get("tags", [])[:4])
-
-            t_file = write_txt("title", title)
-            n_file = write_txt("narr", narration) if narration else None
-            g_file = write_txt("tags", tags) if tags else None
-            l_file = write_txt("logo", "JARVIS-X")
-
-            ff = font_file
-            vf_parts = [
-                "drawbox=x=0:y=0:w=1080:h=8:color=#0b84ff:t=fill",
-                "drawbox=x=0:y=1912:w=1080:h=8:color=#0b84ff:t=fill",
-                f"drawtext=textfile='{l_file}':x=80:y=90:fontsize=50:fontcolor=#0b84ff:fontfile='{ff}'",
-                f"drawtext=textfile='{t_file}':x=80:y=260:fontsize=62:fontcolor=white:fontfile='{ff}':line_spacing=10",
-            ]
-            if n_file:
-                vf_parts.append(
-                    f"drawtext=textfile='{n_file}':x=80:y=680:fontsize=38:fontcolor=#ccccdd:fontfile='{ff}':line_spacing=8"
-                )
-            if g_file:
-                vf_parts.append(
-                    f"drawtext=textfile='{g_file}':x=80:y=1580:fontsize=34:fontcolor=#0b84ff:fontfile='{ff}'"
-                )
-
-            text_cmd = [
-                "ffmpeg", "-y",
-                "-f", "lavfi", "-i", "color=c=0x0d0d1a:size=1080x1920:rate=24",
-                "-vf", ",".join(vf_parts),
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-                "-t", "5", "-pix_fmt", "yuv420p", "-threads", "1",
-                video_path
-            ]
-            print("[INFO] FFmpeg drawtext 시도...")
-            result = subprocess.run(text_cmd, capture_output=True, text=True, timeout=60)
-            if result.returncode == 0 and os.path.exists(video_path):
-                size = os.path.getsize(video_path)
-                print(f"[INFO] 영상 완료 (텍스트): {video_path} ({size} bytes)")
-                return video_path
-            print(f"[WARN] drawtext 실패 rc={result.returncode} → 단색 폴백")
-            print(f"[WARN] stderr: {result.stderr[-400:]}")
-
-        # 폴백: 단색 배경
-        print("[INFO] FFmpeg 단색 배경 시도...")
+        # 단색 배경만 사용 (텍스트 오버레이 없음 - 메모리 절약)
+        print("[INFO] FFmpeg 단색 배경 영상 생성...")
         result = subprocess.run(base_cmd, capture_output=True, text=True, timeout=60)
         if result.returncode == 0 and os.path.exists(video_path):
             size = os.path.getsize(video_path)
-            print(f"[INFO] 영상 완료 (단색): {video_path} ({size} bytes)")
+            print(f"[INFO] 영상 완료: {video_path} ({size} bytes)")
             return video_path
 
-        print(f"[ERROR] FFmpeg 최종 실패 rc={result.returncode}")
+        print(f"[ERROR] FFmpeg 실패 rc={result.returncode}")
         print(f"[ERROR] stderr:\n{result.stderr[-600:]}")
         return None
 
