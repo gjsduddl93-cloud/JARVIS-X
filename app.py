@@ -479,7 +479,10 @@ def job_status(job_id):
     """작업 진행 상황 폴링"""
     job = _get_job(job_id)
     if not job:
-        return jsonify({"error": "작업을 찾을 수 없습니다"}), 404
+        return jsonify({
+            "error": "server_restarted",
+            "message": "서버가 재시작되어 작업 정보가 사라졌습니다. 버튼을 다시 클릭해주세요."
+        }), 404
     return jsonify(job), 200
 
 

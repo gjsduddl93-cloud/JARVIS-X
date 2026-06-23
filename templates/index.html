@@ -317,8 +317,19 @@ function startVideoPackage() {
 
         _videoPolling = setInterval(function(){
             fetch("/status/" + jobId)
-            .then(function(r){ return r.json(); })
+            .then(function(r){
+                if(r.status === 404){
+                    clearInterval(_videoPolling);
+                    btn.classList.remove("running");
+                    btn.textContent = "🎥 영상 제작 패키지";
+                    bubble.textContent = "🔄 서버가 재시작되었습니다.\n버튼을 다시 클릭해서 새 작업을 시작해주세요.";
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                    return null;
+                }
+                return r.json();
+            })
             .then(function(job){
+                if(!job) return;  // 404 already handled
                 const logs = (job.logs || []).join("\n");
                 let msg = logs;
 
@@ -357,7 +368,7 @@ function startVideoPackage() {
                 bubble.textContent = msg;
                 chatBox.scrollTop = chatBox.scrollHeight;
             })
-            .catch(function(){ /* 폴링 오류 무시, 계속 시도 */ });
+            .catch(function(){ /* 네트워크 오류 시 무시하고 계속 폴링 */ });
         }, 3000);
     })
     .catch(function(err){
