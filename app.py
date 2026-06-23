@@ -221,12 +221,8 @@ def create_text_image(content_data: dict) -> str | None:
         img = Image.new("RGB", (W, H), (13, 13, 26))
         draw = ImageDraw.Draw(img)
 
-        # 수직 그라디언트 배경
-        for row in range(H):
-            t = row / H
-            r = int(13 + 13 * t)
-            b = int(26 + 20 * t)
-            draw.line([(0, row), (W, row)], fill=(r, 13, b))
+        # 배경: 상단 다크네이비 / 하단 다크퍼플 (루프 없이 직사각형 2개)
+        draw.rectangle([0, H // 2, W, H], fill=(20, 13, 40))
 
         # 상하단 파란 액센트 바
         draw.rectangle([0, 0, W, 10], fill="#0b84ff")
