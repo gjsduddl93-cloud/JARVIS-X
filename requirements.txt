@@ -5,6 +5,6 @@ openai>=1.13.0
 apscheduler==3.10.4
 gunicorn==21.2.0
 requests==2.31.0
-pillow==10.1.0
+pillow>=10.4.0
 pydub==0.25.1
 httpx>=0.25.0
