@@ -1,12 +1,6 @@
 from flask import Flask, render_template, request, session, jsonify, redirect
 from anthropic import Anthropic
 from openai import OpenAI
-try:
-    from google.cloud import texttospeech
-    _TTS_AVAILABLE = True
-except ImportError:
-    texttospeech = None
-    _TTS_AVAILABLE = False
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
@@ -30,11 +24,7 @@ app.secret_key = os.getenv("SECRET_KEY", "jarvis_x_secret_key")
 # API 초기화
 claude_client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-try:
-    tts_client = texttospeech.TextToSpeechClient() if _TTS_AVAILABLE else None
-except Exception:
-    tts_client = None
-    _TTS_AVAILABLE = False
+# tts_client = texttospeech.TextToSpeechClient()
 
 PROJECTS_DIR = "projects"
 VIDEOS_DIR = os.path.join(PROJECTS_DIR, "videos")
@@ -142,36 +132,34 @@ def generate_image_dalle(prompt):
         return None
 
 
-def generate_audio_tts(text, output_path):
-    """Google Cloud TTS로 음성 생성"""
-    if not _TTS_AVAILABLE or tts_client is None:
-        return None
-    try:
-        synthesis_input = texttospeech.SynthesisInput(text=text)
-        
-        voice = texttospeech.VoiceSelectionParams(
-            language_code="ko-KR",
-            name="ko-KR-Neural2-A",
-            ssml_gender=texttospeech.SsmlVoiceGender.FEMALE
-        )
-        
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.MP3,
-            speaking_rate=1.0
-        )
-        
-        response = tts_client.synthesize_speech(
-            input=synthesis_input,
-            voice=voice,
-            audio_config=audio_config
-        )
-        
-        with open(output_path, 'wb') as out:
-            out.write(response.audio_content)
-        
-        return output_path
-    except Exception as e:
-        return None
+# def generate_audio_tts(text, output_path):
+#     """Google Cloud TTS로 음성 생성"""
+#     try:
+#         synthesis_input = texttospeech.SynthesisInput(text=text)
+#
+#         voice = texttospeech.VoiceSelectionParams(
+#             language_code="ko-KR",
+#             name="ko-KR-Neural2-A",
+#             ssml_gender=texttospeech.SsmlVoiceGender.FEMALE
+#         )
+#
+#         audio_config = texttospeech.AudioConfig(
+#             audio_encoding=texttospeech.AudioEncoding.MP3,
+#             speaking_rate=1.0
+#         )
+#
+#         response = tts_client.synthesize_speech(
+#             input=synthesis_input,
+#             voice=voice,
+#             audio_config=audio_config
+#         )
+#
+#         with open(output_path, 'wb') as out:
+#             out.write(response.audio_content)
+#
+#         return output_path
+#     except Exception as e:
+#         return None
 
 
 def create_simple_video(content_data):
@@ -190,7 +178,8 @@ def create_simple_video(content_data):
         narration = content_data.get('narration', '')
         if narration:
             audio_path = os.path.join(AUDIO_DIR, f"audio_{timestamp}.mp3")
-            audio_path = generate_audio_tts(narration, audio_path)
+            # audio_path = generate_audio_tts(narration, audio_path)
+            audio_path = None
         else:
             audio_path = None
         
