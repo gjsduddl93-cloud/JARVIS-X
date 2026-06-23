@@ -119,6 +119,16 @@ SYSTEM_PROMPT = """
 YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 TOKEN_FILE = "youtube_token.json"
 
+# Render 환경변수에서 YouTube 토큰 로드 (YOUTUBE_TOKEN_JSON 설정 시)
+_yt_token_env = os.getenv("YOUTUBE_TOKEN_JSON", "").strip()
+if _yt_token_env and not os.path.exists(TOKEN_FILE):
+    try:
+        with open(TOKEN_FILE, "w", encoding="utf-8") as _f:
+            _f.write(_yt_token_env)
+        print(f"[INFO] YouTube 토큰을 환경변수에서 로드: {TOKEN_FILE}")
+    except Exception as _e:
+        print(f"[WARN] YouTube 토큰 파일 저장 실패: {_e}")
+
 
 # ── AI 호출 ──────────────────────────────────────────────────────────────────
 
