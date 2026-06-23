@@ -6,7 +6,7 @@ apscheduler==3.10.4
 gunicorn==21.2.0
 requests==2.31.0
 moviepy>=1.0.3
-google-cloud-text-to-speech>=2.13.0
+google-cloud-texttospeech>=2.13.0
 google-auth-oauthlib==1.1.0
 google-auth-httplib2==0.2.0
 google-api-python-client==2.100.0
