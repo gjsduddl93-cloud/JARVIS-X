@@ -206,13 +206,141 @@ def generate_image_dalle(prompt):
         return None
 
 
+def _draw_wrapped_text(draw, text, font, x, y, max_x, color, line_height=60):
+    """텍스트를 max_x 너비에 맞게 자동 줄바꿈하여 그린다. 최종 y 좌표 반환."""
+    max_w = max_x - x
+    lines = []
+    current = ""
+    for ch in text:
+        test = current + ch
+        try:
+            bbox = draw.textbbox((0, 0), test, font=font)
+            w = bbox[2] - bbox[0]
+        except Exception:
+            w = len(test) * 20
+        if w > max_w and current:
+            lines.append(current)
+            current = ch
+        else:
+            current = test
+    if current:
+        lines.append(current)
+    for line in lines:
+        draw.text((x, y), line, fill=color, font=font)
+        y += line_height
+    return y
+
+
+def create_text_image(content_data: dict) -> str | None:
+    """Pillow로 콘텐츠 정보가 담긴 1080×1920 이미지 생성 (DALL-E 대체)"""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        print("[WARN] create_text_image: Pillow 미설치")
+        return None
+    try:
+        W, H = 1080, 1920
+        img = Image.new("RGB", (W, H), (13, 13, 26))
+        draw = ImageDraw.Draw(img)
+
+        # 수직 그라디언트 배경
+        for row in range(H):
+            t = row / H
+            r = int(13 + 13 * t)
+            b = int(26 + 20 * t)
+            draw.line([(0, row), (W, row)], fill=(r, 13, b))
+
+        # 상하단 파란 액센트 바
+        draw.rectangle([0, 0, W, 10], fill="#0b84ff")
+        draw.rectangle([0, H - 10, W, H], fill="#0b84ff")
+
+        # 폰트 후보 (한글 우선 → 기본 폰트)
+        _font_candidates = [
+            "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
+            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+            "/usr/share/fonts/truetype/nanum/NanumBarunGothicBold.ttf",
+            "/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "C:/Windows/Fonts/malgun.ttf",
+            "C:/Windows/Fonts/arial.ttf",
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+        ]
+
+        def _load(size):
+            for fp in _font_candidates:
+                if os.path.exists(fp):
+                    try:
+                        return ImageFont.truetype(fp, size), fp
+                    except Exception:
+                        continue
+            return ImageFont.load_default(), "default"
+
+        logo_font,  _fp = _load(52)
+        title_font, _fp = _load(68)
+        body_font,  _fp = _load(42)
+        small_font, _fp = _load(32)
+        print(f"[INFO] create_text_image: 폰트={_fp}")
+
+        M = 80  # 좌우 여백
+
+        # 로고
+        draw.text((M, 100), "JARVIS-X", fill="#0b84ff", font=logo_font)
+        draw.text((M, 162), "AI Content Studio", fill="#6699cc", font=small_font)
+        draw.rectangle([M, 228, W - M, 234], fill="#0b84ff")
+
+        # 제목
+        title = content_data.get("title", "오늘의 콘텐츠")
+        y = 280
+        y = _draw_wrapped_text(draw, title, title_font, M, y, W - M, "#ffffff", line_height=86)
+
+        # 구분선
+        y += 20
+        draw.rectangle([M, y, W - M, y + 3], fill="#334466")
+        y += 36
+
+        # 나레이션
+        narration = content_data.get("narration") or content_data.get("description", "")
+        if narration:
+            y = _draw_wrapped_text(draw, narration, body_font, M, y, W - M, "#ccccdd", line_height=56)
+
+        # 태그
+        tags = content_data.get("tags", [])
+        if tags:
+            y += 24
+            tag_text = "  ".join(f"#{t}" for t in tags[:5])
+            y = _draw_wrapped_text(draw, tag_text, small_font, M, y, W - M, "#0b84ff", line_height=44)
+
+        # 날짜
+        draw.text((M, H - 76), datetime.now().strftime("%Y.%m.%d"), fill="#445566", font=small_font)
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(IMAGES_DIR, f"image_{ts}.png")
+        img.save(path, "PNG")
+        print(f"[INFO] Pillow 이미지 완료: {path} ({W}x{H})")
+        return path
+    except Exception as e:
+        print(f"[ERROR] create_text_image: {e}")
+        print(traceback.format_exc())
+        return None
+
+
 def create_simple_video(content_data):
-    """이미지 → mp4. 이미지 실패 시 단색 배경으로 대체."""
+    """이미지 → mp4. DALL-E 실패 시 Pillow 텍스트 이미지, 그것도 실패 시 단색 배경."""
     try:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # 1순위: DALL-E
         image_path = generate_image_dalle(
             content_data.get("image_prompt", "Professional video thumbnail")
         )
+
+        # 2순위: Pillow 텍스트 이미지
+        if not image_path:
+            print("[INFO] create_simple_video: DALL-E 실패 → Pillow 텍스트 이미지 생성")
+            image_path = create_text_image(content_data)
+
         if not image_path:
             print("[WARN] create_simple_video: 이미지 없음 → 단색 배경 대체")
 
@@ -376,7 +504,7 @@ def _run_video_job(job_id: str) -> None:
         _update_job(job_id, content=content_data)
 
         # Step 2: 이미지 + 영상 생성
-        _append_log(job_id, "2️⃣ DALL-E 이미지 생성 중...")
+        _append_log(job_id, "2️⃣ 이미지 생성 중 (DALL-E → Pillow 텍스트 순으로 시도)...")
         video_path = create_simple_video(content_data)
         if not video_path:
             _append_log(job_id, "❌ 영상 생성 실패 (ffmpeg/DALL-E 확인 필요)")
