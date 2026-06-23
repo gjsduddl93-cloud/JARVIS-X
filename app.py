@@ -225,50 +225,76 @@ def _ffmpeg_escape(text):
             .replace("%",  "\\%"))
 
 
+def _ascii_only(text):
+    """ASCII 출력 가능한 문자만 남김 (내장 폰트용)."""
+    return "".join(c for c in text if 32 <= ord(c) < 127)
+
+
 def _find_font():
-    """시스템에서 사용 가능한 폰트 경로 반환 (fontconfig 스캔 없이 직접 경로)."""
+    """직접 경로로 폰트 파일 탐색 (fontconfig 스캔 없음)."""
     candidates = [
-        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",       # Render (apt.txt)
+        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
         "/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "C:/Windows/Fonts/malgun.ttf",   # Windows 맑은 고딕
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "C:/Windows/Fonts/malgun.ttf",
         "C:/Windows/Fonts/arial.ttf",
     ]
     for p in candidates:
         if os.path.exists(p):
-            print(f"[INFO] 폰트 발견: {p}")
+            print(f"[FONT] 발견: {p}")
             return p
-    print("[WARN] 사용 가능한 폰트 없음 — drawtext 비활성화")
+    print("[FONT] 사용 가능한 폰트 없음")
     return None
 
 
-def _build_drawtext_filter(font_path, title, narration):
-    """title + narration 줄 분할 drawtext 필터 문자열 생성."""
-    parts = []
-    safe_title = _ffmpeg_escape(title[:35])
-    parts.append(
-        f"drawtext=fontfile='{font_path}'"
-        f":text='{safe_title}'"
+def _build_drawtext_vf(font_path, title, narration):
+    """fontfile 지정 drawtext VF (한국어 지원)."""
+    fp = font_path.replace("\\", "/")   # Windows 경로 보정
+    parts = [
+        f"drawtext=fontfile='{fp}'"
+        f":text='{_ffmpeg_escape(title[:35])}'"
         f":fontsize=72:fontcolor=white"
         f":x=(w-text_w)/2:y=280"
-        f":box=1:boxcolor=black@0.6:boxborderw=12"
-    )
-    # 나레이션 22자씩 최대 5줄
+        f":box=1:boxcolor=black@0.6:boxborderw=12",
+    ]
     lines = [narration[i:i+22] for i in range(0, min(len(narration), 110), 22)]
     for idx, line in enumerate(lines):
-        y = 460 + idx * 90
         parts.append(
-            f"drawtext=fontfile='{font_path}'"
+            f"drawtext=fontfile='{fp}'"
             f":text='{_ffmpeg_escape(line)}'"
             f":fontsize=48:fontcolor=0xccddff"
-            f":x=(w-text_w)/2:y={y}"
+            f":x=(w-text_w)/2:y={460 + idx * 90}"
+            f":box=1:boxcolor=black@0.4:boxborderw=8"
+        )
+    return ",".join(parts)
+
+
+def _build_ascii_drawtext_vf(title, narration):
+    """폰트 없이 FFmpeg 내장 폰트 사용 (ASCII 전용)."""
+    atitle = _ascii_only(title) or "JARVIS-X Auto Video"
+    anarr  = _ascii_only(narration) or "AI Generated Content"
+    parts  = [
+        f"drawtext=text='{_ffmpeg_escape(atitle[:40])}'"
+        f":fontsize=72:fontcolor=white"
+        f":x=(w-text_w)/2:y=280"
+        f":box=1:boxcolor=black@0.6:boxborderw=12",
+    ]
+    lines = [anarr[i:i+30] for i in range(0, min(len(anarr), 120), 30)]
+    for idx, line in enumerate(lines):
+        parts.append(
+            f"drawtext=text='{_ffmpeg_escape(line)}'"
+            f":fontsize=48:fontcolor=0xccddff"
+            f":x=(w-text_w)/2:y={460 + idx * 90}"
             f":box=1:boxcolor=black@0.4:boxborderw=8"
         )
     return ",".join(parts)
 
 
 def _run_ffmpeg(cmd, log_path, timeout=90):
-    """FFmpeg 실행 (Popen+파일 로그). 반환값: (returncode, log_tail)."""
+    """FFmpeg 실행 (Popen+파일 로그). 반환값: (returncode, log_content)."""
+    print(f"[FFMPEG CMD] {' '.join(cmd)}")   # 전체 명령어 로그
     with open(log_path, "w") as lf:
         proc = subprocess.Popen(cmd, stdout=lf, stderr=lf, close_fds=True)
     try:
@@ -276,21 +302,27 @@ def _run_ffmpeg(cmd, log_path, timeout=90):
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
+        print("[FFMPEG] TIMEOUT")
         return -1, "TIMEOUT"
     try:
-        with open(log_path) as lf:
-            tail = lf.read()[-600:]
+        with open(log_path, encoding="utf-8", errors="replace") as lf:
+            content = lf.read()
+        # 에러 줄만 추출해서 요약 출력
+        error_lines = [l for l in content.splitlines() if "Error" in l or "error" in l or "Invalid" in l]
+        if error_lines:
+            print(f"[FFMPEG ERR] {chr(10).join(error_lines[:8])}")
+        print(f"[FFMPEG] rc={rc}, log_size={len(content)}B")
+        return rc, content
     except Exception:
-        tail = "(로그 없음)"
-    return rc, tail
+        return rc, "(로그 읽기 실패)"
 
 
 def create_simple_video(content_data):
-    """FFmpeg로 1080×1920 쇼츠 영상 생성. 텍스트 오버레이 포함."""
+    """FFmpeg 1080×1920 쇼츠 영상 생성. 3단계 텍스트 오버레이 전략."""
     try:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         video_path = os.path.join(VIDEOS_DIR, f"video_{ts}.mp4")
-        log_path = os.path.join(os.path.abspath(IMAGES_DIR), f"ffmpeg_{ts}.log")
+        log_path   = os.path.join(os.path.abspath(IMAGES_DIR), f"ffmpeg_{ts}.log")
 
         try:
             chk = subprocess.run(["ffmpeg", "-version"],
@@ -302,45 +334,47 @@ def create_simple_video(content_data):
             print(f"[ERROR] ffmpeg 실행 불가: {e}")
             return None
 
-        title    = content_data.get("title", "JARVIS-X")
+        title     = content_data.get("title", "JARVIS-X")
         narration = content_data.get("narration", "")
         font_path = _find_font()
 
-        base_input = [
-            "ffmpeg", "-y",
-            "-f", "lavfi", "-i", "color=c=0x0d0d1a:size=1080x1920:rate=24",
-        ]
-        base_output = [
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-            "-t", "10", "-pix_fmt", "yuv420p", "-threads", "1",
-            video_path,
-        ]
+        base_in  = ["ffmpeg", "-y", "-f", "lavfi",
+                    "-i", "color=c=0x0d0d1a:size=1080x1920:rate=24"]
+        base_out = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                    "-t", "10", "-pix_fmt", "yuv420p", "-threads", "1", video_path]
 
-        if font_path:
-            vf = _build_drawtext_filter(font_path, title, narration)
-            cmd = base_input + ["-vf", vf] + base_output
-            print(f"[INFO] FFmpeg drawtext 영상 생성 (font={os.path.basename(font_path)})...")
-            rc, tail = _run_ffmpeg(cmd, log_path)
+        def _try(label, vf):
+            cmd = base_in + ["-vf", vf] + base_out
+            print(f"[VIDEO] 전략: {label}")
+            rc, log = _run_ffmpeg(cmd, log_path)
+            ok = rc == 0 and os.path.exists(video_path) and os.path.getsize(video_path) > 1000
+            if ok:
+                print(f"[VIDEO] 완료 ({label}): {video_path} ({os.path.getsize(video_path)}B)")
+            else:
+                print(f"[VIDEO] 실패 ({label}) rc={rc}")
+                # 실패 시 부분 파일 삭제
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+            return ok
 
-            if rc == 0 and os.path.exists(video_path):
-                size = os.path.getsize(video_path)
-                print(f"[INFO] 영상 완료 (drawtext): {video_path} ({size}B)")
-                return video_path
-
-            # drawtext 실패 → 단색 폴백
-            print(f"[WARN] drawtext 실패 rc={rc}, 단색 폴백 시도...\n{tail[-200:]}")
-
-        # 폴백: 단색 배경만
-        cmd_plain = base_input + base_output
-        print("[INFO] FFmpeg 단색 배경 영상 생성 (폴백)...")
-        rc, tail = _run_ffmpeg(cmd_plain, log_path)
-
-        if rc == 0 and os.path.exists(video_path):
-            size = os.path.getsize(video_path)
-            print(f"[INFO] 영상 완료 (단색): {video_path} ({size}B)")
+        # 전략 1: fontfile 지정 drawtext (한국어 지원)
+        if font_path and _try("drawtext+fontfile", _build_drawtext_vf(font_path, title, narration)):
             return video_path
 
-        print(f"[ERROR] FFmpeg 실패 rc={rc}\n{tail}")
+        # 전략 2: 내장 폰트 drawtext (ASCII 전용)
+        if _try("drawtext+builtin", _build_ascii_drawtext_vf(title, narration)):
+            return video_path
+
+        # 전략 3: 단색 배경 (폴백)
+        print("[VIDEO] 단색 배경 폴백...")
+        cmd_plain = base_in + base_out
+        print(f"[FFMPEG CMD] {' '.join(cmd_plain)}")
+        rc, _ = _run_ffmpeg(cmd_plain, log_path)
+        if rc == 0 and os.path.exists(video_path):
+            print(f"[VIDEO] 단색 완료: {video_path} ({os.path.getsize(video_path)}B)")
+            return video_path
+
+        print("[ERROR] 모든 FFmpeg 전략 실패")
         return None
 
     except Exception as e:
@@ -806,48 +840,102 @@ def test_youtube():
     return jsonify(result), 200
 
 
-@app.route("/test-ffmpeg", methods=["GET"])
-def test_ffmpeg():
-    """FFmpeg + drawtext 동기 테스트."""
-    import tempfile
+@app.route("/check-system", methods=["GET"])
+def check_system():
+    """폰트·FFmpeg·시스템 상태 진단 엔드포인트."""
     result = {"timestamp": datetime.now().isoformat()}
 
-    # 1) 기본 인코딩 테스트
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
-        tmp_plain = f.name
-    try:
-        r = subprocess.run([
-            "ffmpeg", "-y", "-f", "lavfi",
-            "-i", "color=c=0x0d0d1a:size=1080x1920:rate=24",
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-            "-t", "3", "-pix_fmt", "yuv420p", "-threads", "1", tmp_plain,
-        ], capture_output=True, text=True, timeout=30)
-        result["plain_rc"]   = r.returncode
-        result["plain_size"] = os.path.getsize(tmp_plain) if os.path.exists(tmp_plain) else 0
-        result["plain_err"]  = r.stderr[-200:]
-    except Exception as e:
-        result["plain_error"] = str(e)
+    # 폰트 파일 존재 여부 직접 확인
+    font_candidates = [
+        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+        "/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    ]
+    result["font_checks"] = {p: os.path.exists(p) for p in font_candidates}
+    result["font_found"]  = _find_font()
 
-    # 2) drawtext 테스트 (fontfile 직접 지정)
+    # fc-list (fontconfig)로 설치된 폰트 목록
+    try:
+        fc = subprocess.run(["fc-list", ":lang=ko"],
+                            capture_output=True, text=True, timeout=10)
+        result["fc_list_ko"] = fc.stdout[:600] or "(없음)"
+    except Exception as e:
+        result["fc_list_ko"] = f"fc-list 실패: {e}"
+
+    # /usr/share/fonts 디렉터리 구조
+    try:
+        ls = subprocess.run(["find", "/usr/share/fonts", "-name", "*.ttf", "-o",
+                             "-name", "*.otf", "-o", "-name", "*.ttc"],
+                            capture_output=True, text=True, timeout=10)
+        result["font_files"] = ls.stdout[:800] or "(없음)"
+    except Exception as e:
+        result["font_files"] = f"find 실패: {e}"
+
+    # FFmpeg 버전
+    try:
+        fv = subprocess.run(["ffmpeg", "-version"],
+                            capture_output=True, text=True, timeout=5)
+        result["ffmpeg_version"] = fv.stdout.splitlines()[0] if fv.stdout else fv.stderr[:100]
+    except Exception as e:
+        result["ffmpeg_version"] = str(e)
+
+    # 디스크 여유 공간
+    try:
+        df = subprocess.run(["df", "-h", "/"], capture_output=True, text=True, timeout=5)
+        result["disk"] = df.stdout
+    except Exception as e:
+        result["disk"] = str(e)
+
+    return jsonify(result), 200
+
+
+@app.route("/test-ffmpeg", methods=["GET"])
+def test_ffmpeg():
+    """FFmpeg drawtext 3단계 전략 동기 테스트 (결과 즉시 반환)."""
+    import tempfile, shutil
+    result = {"timestamp": datetime.now().isoformat()}
+    tmpdir = tempfile.mkdtemp()
+
+    base_in  = ["ffmpeg", "-y", "-f", "lavfi",
+                "-i", "color=c=0x0d0d1a:size=1080x1920:rate=24"]
+    base_out = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                "-t", "3", "-pix_fmt", "yuv420p", "-threads", "1"]
+
+    def _sync_run(cmd, label):
+        out_path = os.path.join(tmpdir, f"{label}.mp4")
+        full_cmd = cmd + [out_path]
+        result[f"{label}_cmd"] = " ".join(full_cmd)
+        try:
+            r = subprocess.run(full_cmd, capture_output=True, text=True, timeout=30)
+            result[f"{label}_rc"]   = r.returncode
+            result[f"{label}_size"] = os.path.getsize(out_path) if os.path.exists(out_path) else 0
+            result[f"{label}_err"]  = r.stderr[-400:]
+        except Exception as e:
+            result[f"{label}_rc"]  = -1
+            result[f"{label}_err"] = str(e)
+
+    # 1) 기본 단색
+    _sync_run(base_in + base_out, "plain")
+
+    # 2) fontfile drawtext
     font_path = _find_font()
     result["font_path"] = font_path
     if font_path:
-        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
-            tmp_text = f.name
-        vf = _build_drawtext_filter(font_path, "JARVIS-X TEST", "텍스트 오버레이 테스트입니다")
-        try:
-            r2 = subprocess.run([
-                "ffmpeg", "-y", "-f", "lavfi",
-                "-i", "color=c=0x0d0d1a:size=1080x1920:rate=24",
-                "-vf", vf,
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-                "-t", "3", "-pix_fmt", "yuv420p", "-threads", "1", tmp_text,
-            ], capture_output=True, text=True, timeout=30)
-            result["drawtext_rc"]   = r2.returncode
-            result["drawtext_size"] = os.path.getsize(tmp_text) if os.path.exists(tmp_text) else 0
-            result["drawtext_err"]  = r2.stderr[-300:]
-        except Exception as e:
-            result["drawtext_error"] = str(e)
+        vf = _build_drawtext_vf(font_path, "JARVIS-X TEST", "텍스트 오버레이 테스트")
+        result["drawtext_vf"] = vf[:300]
+        _sync_run(base_in + ["-vf", vf] + base_out, "drawtext_font")
+
+    # 3) 내장 폰트 drawtext (ASCII)
+    vf_ascii = _build_ascii_drawtext_vf("JARVIS-X ASCII Test", "AI Generated Short Video")
+    result["ascii_vf"] = vf_ascii[:300]
+    _sync_run(base_in + ["-vf", vf_ascii] + base_out, "drawtext_ascii")
+
+    try:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+    except Exception:
+        pass
 
     return jsonify(result), 200
 
