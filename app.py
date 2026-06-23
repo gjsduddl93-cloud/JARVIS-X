@@ -65,7 +65,7 @@ def ask_claude(user_prompt, max_tokens=1024):
     """Claude API 호출 (주요)"""
     try:
         message = claude_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-3-sonnet-20240229",
             max_tokens=max_tokens,
             system=SYSTEM_PROMPT,
             messages=[
