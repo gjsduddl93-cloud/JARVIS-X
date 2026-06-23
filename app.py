@@ -580,6 +580,31 @@ def debug():
     }), 200
 
 
+@app.route("/test-ffmpeg", methods=["GET"])
+def test_ffmpeg():
+    """FFmpeg 직접 실행 테스트 (백그라운드 없이 동기 실행)"""
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False, dir="/tmp") as f:
+        tmp_path = f.name
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "lavfi", "-i", "color=c=0x0d0d1a:size=320x568:rate=24",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+        "-t", "2", "-pix_fmt", "yuv420p", "-threads", "1",
+        tmp_path
+    ]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        size = os.path.getsize(tmp_path) if os.path.exists(tmp_path) else 0
+        return jsonify({
+            "returncode": r.returncode,
+            "file_size": size,
+            "stderr_tail": r.stderr[-300:],
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/test-ai", methods=["GET"])
 def test_ai():
     result = {}
