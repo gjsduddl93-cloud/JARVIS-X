@@ -1,11 +1,12 @@
 flask==3.0.0
 python-dotenv==1.0.0
+anthropic>=0.40.0
 openai>=1.13.0
 apscheduler==3.10.4
 gunicorn==21.2.0
 requests==2.31.0
-moviepy==1.0.3
-google-cloud-text-to-speech==2.14.1
+moviepy>=1.0.3
+google-cloud-text-to-speech>=2.13.0
 google-auth-oauthlib==1.1.0
 google-auth-httplib2==0.2.0
 google-api-python-client==2.100.0
