@@ -1,23 +1,20 @@
-from flask import Flask, render_template, request, session, jsonify, redirect, url_for
+from flask import Flask, render_template, request, session, jsonify, redirect
+from anthropic import Anthropic
 from openai import OpenAI
 from google.cloud import texttospeech
-from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.oauthlib.flow import Flow
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 from dotenv import load_dotenv
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
-from moviepy.editor import TextClip, ImageClip, AudioFileClip, concatenate_videoclips, CompositeVideoClip
 import os
 import re
 import json
 import requests
 from pathlib import Path
-import tempfile
 import subprocess
 
 load_dotenv()
@@ -26,6 +23,7 @@ app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "jarvis_x_secret_key")
 
 # API 초기화
+claude_client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 tts_client = texttospeech.TextToSpeechClient()
 
@@ -56,44 +54,59 @@ SYSTEM_PROMPT = """
 3. 사용자가 자세히 요청할 때만 길게 설명
 4. 목록은 최대 5개
 5. 실행 가능한 내용만 말하기
+6. JSON 형식 요청시 정확한 JSON만 반환
 """
 
-# YouTube OAuth 설정
 YOUTUBE_SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
-CREDENTIALS_FILE = 'youtube_credentials.json'
 TOKEN_FILE = 'youtube_token.json'
 
 
-def get_youtube_service():
-    """YouTube API 서비스 객체 생성"""
-    creds = None
-    
-    # 저장된 토큰 있으면 사용
-    if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, YOUTUBE_SCOPES)
-    
-    # 유효한 토큰 없으면 새로 생성
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = Flow.from_client_secrets_file(
-                CREDENTIALS_FILE,
-                scopes=YOUTUBE_SCOPES,
-                redirect_uri='https://jarvis-x-61rf.onrender.com/auth/youtube/callback'
-            )
-            flow.client_id = os.getenv("YOUTUBE_CLIENT_ID")
-            flow.client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
-            
-            auth_url, state = flow.authorization_url(access_type='offline', prompt='consent')
-            session['state'] = state
-            return None, auth_url
-        
-        # 토큰 저장
-        with open(TOKEN_FILE, 'w') as token:
-            token.write(creds.to_json())
-    
-    return build('youtube', 'v3', credentials=creds), None
+def ask_claude(user_prompt, max_tokens=1024):
+    """Claude API 호출 (주요)"""
+    try:
+        message = claude_client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=max_tokens,
+            system=SYSTEM_PROMPT,
+            messages=[
+                {"role": "user", "content": user_prompt}
+            ]
+        )
+        return message.content[0].text
+    except Exception as e:
+        return None
+
+
+def ask_chatgpt(user_prompt, max_tokens=1024):
+    """ChatGPT API 호출 (백업)"""
+    try:
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ],
+            max_tokens=max_tokens,
+            temperature=0.7
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return None
+
+
+def ask_ai(user_prompt, max_tokens=1024, prefer_claude=True):
+    """Claude 우선, 실패시 ChatGPT 자동 전환"""
+    if prefer_claude:
+        result = ask_claude(user_prompt, max_tokens)
+        if result:
+            return result
+        # Claude 실패시 ChatGPT로 자동 전환
+        return ask_chatgpt(user_prompt, max_tokens)
+    else:
+        result = ask_chatgpt(user_prompt, max_tokens)
+        if result:
+            return result
+        return ask_claude(user_prompt, max_tokens)
 
 
 def generate_image_dalle(prompt):
@@ -108,8 +121,6 @@ def generate_image_dalle(prompt):
         )
         
         image_url = response.data[0].url
-        
-        # 이미지 다운로드
         img_data = requests.get(image_url).content
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         image_path = os.path.join(IMAGES_DIR, f"image_{timestamp}.png")
@@ -152,96 +163,112 @@ def generate_audio_tts(text, output_path):
         return None
 
 
-def create_video_from_content(content_data):
-    """콘텐츠에서 영상 자동 생성"""
+def create_simple_video(content_data):
+    """간단한 영상 생성 (텍스트 카드형)"""
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # 1. 이미지 생성 (DALL-E)
+        # 이미지 생성
         image_prompt = content_data.get('image_prompt', 'Professional video thumbnail')
         image_path = generate_image_dalle(image_prompt)
         
         if not image_path:
             return None
         
-        # 2. 음성 생성 (Google TTS)
+        # 음성 생성
         narration = content_data.get('narration', '')
-        audio_path = os.path.join(AUDIO_DIR, f"audio_{timestamp}.mp3")
-        audio_path = generate_audio_tts(narration, audio_path)
+        if narration:
+            audio_path = os.path.join(AUDIO_DIR, f"audio_{timestamp}.mp3")
+            audio_path = generate_audio_tts(narration, audio_path)
+        else:
+            audio_path = None
         
-        if not audio_path:
-            return None
+        # FFmpeg로 간단한 영상 생성 (이미지 + 음성)
+        video_path = os.path.join(VIDEOS_DIR, f"video_{timestamp}.mp4")
         
-        # 3. 자막 준비
-        subtitle_text = content_data.get('title', '')
+        if audio_path:
+            # 오디오 길이 확인
+            try:
+                result = subprocess.run(
+                    ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1:nokey=1', audio_path],
+                    capture_output=True,
+                    text=True
+                )
+                duration = float(result.stdout.strip()) if result.stdout else 10
+            except:
+                duration = 10
+            
+            # FFmpeg로 영상 생성
+            cmd = [
+                'ffmpeg', '-y',
+                '-loop', '1',
+                '-i', image_path,
+                '-i', audio_path,
+                '-c:v', 'libx264',
+                '-c:a', 'aac',
+                '-shortest',
+                '-pix_fmt', 'yuv420p',
+                '-vf', f'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2',
+                video_path
+            ]
+        else:
+            # 오디오 없이 이미지만
+            cmd = [
+                'ffmpeg', '-y',
+                '-loop', '1',
+                '-i', image_path,
+                '-c:v', 'libx264',
+                '-t', '10',
+                '-pix_fmt', 'yuv420p',
+                '-vf', f'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2',
+                video_path
+            ]
         
-        # 4. MoviePy로 영상 편집
-        try:
-            # 이미지 클립 (10초)
-            img_clip = ImageClip(image_path).set_duration(10)
-            
-            # 오디오 클립
-            audio_clip = AudioFileClip(audio_path)
-            video_duration = audio_clip.duration + 2  # 여유 2초
-            
-            img_clip = img_clip.set_duration(video_duration)
-            
-            # 자막 추가
-            if subtitle_text:
-                txt_clip = TextClip(
-                    subtitle_text,
-                    fontsize=40,
-                    color='white',
-                    font='Arial-Bold',
-                    method='caption',
-                    size=(img_clip.w - 40, None)
-                ).set_duration(video_duration).set_position('bottom')
-                
-                video_clip = CompositeVideoClip([img_clip, txt_clip])
-            else:
-                video_clip = img_clip
-            
-            # 오디오 추가
-            video_clip = video_clip.set_audio(audio_clip)
-            
-            # 영상 저장 (MP4, 1080x1920 세로 포맷 - 쇼츠용)
-            video_path = os.path.join(VIDEOS_DIR, f"video_{timestamp}.mp4")
-            video_clip.write_videofile(
-                video_path,
-                fps=24,
-                codec='libx264',
-                audio_codec='aac',
-                verbose=False,
-                logger=None
-            )
-            
-            # 메모리 정리
-            video_clip.close()
-            audio_clip.close()
-            
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0 and os.path.exists(video_path):
             return video_path
-        
-        except Exception as e:
+        else:
             return None
     
     except Exception as e:
         return None
 
 
-def upload_to_youtube(video_path, title, description, tags):
-    """YouTube에 영상 자동 업로드"""
+def get_youtube_service():
+    """YouTube 서비스 객체 생성"""
     try:
-        youtube_service, auth_url = get_youtube_service()
+        creds = None
         
-        if auth_url:
-            return {"status": "auth_required", "auth_url": auth_url}
+        if os.path.exists(TOKEN_FILE):
+            creds = Credentials.from_authorized_user_file(TOKEN_FILE, YOUTUBE_SCOPES)
+        
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                return None, "auth_required"
+        
+        return build('youtube', 'v3', credentials=creds), None
+    
+    except Exception as e:
+        return None, str(e)
+
+
+def upload_to_youtube(video_path, title, description, tags):
+    """YouTube에 자동 업로드"""
+    try:
+        youtube_service, error = get_youtube_service()
+        
+        if not youtube_service:
+            return {"status": "auth_required", "message": error}
         
         body = {
             'snippet': {
                 'title': title,
                 'description': description,
                 'tags': tags,
-                'categoryId': '22'  # People & Blogs
+                'categoryId': '22'
             },
             'status': {
                 'privacyStatus': 'public',
@@ -249,11 +276,7 @@ def upload_to_youtube(video_path, title, description, tags):
             }
         }
         
-        media = MediaFileUpload(
-            video_path,
-            mimetype='video/mp4',
-            resumable=True
-        )
+        media = MediaFileUpload(video_path, mimetype='video/mp4', resumable=True)
         
         request = youtube_service.videos().insert(
             part='snippet,status',
@@ -297,52 +320,36 @@ def save_project(category, content):
     return filename
 
 
-def ask_gpt(user_prompt, max_tokens=1024):
-    """ChatGPT 호출"""
-    try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
-            ],
-            max_tokens=max_tokens,
-            temperature=0.7
-        )
-        
-        return response.choices[0].message.content
-    
-    except Exception as e:
-        return f"❌ 오류: {str(e)}"
+def video_package_json():
+    """완전 자동화 영상 패키지 (JSON 형식)"""
+    prompt = """
+유튜브 쇼츠/릴스용 30초 영상 데이터를 JSON 형식으로 정확하게 생성해줘.
 
-
-def video_package():
-    """완전 자동화 영상 패키지"""
-    content_prompt = """
-유튜브 쇼츠/릴스용 30초 영상을 자동으로 만들 수 있는 패키지를 생성해줘.
-
-형식 (JSON으로 정확하게):
+반드시 이 JSON 형식으로만 응답:
 {
   "title": "영상 제목 (30자 이내)",
   "description": "YouTube 설명 (100자 이내)",
   "tags": ["태그1", "태그2", "태그3"],
   "narration": "30초 분량의 나레이션 (약 150자)",
-  "image_prompt": "DALL-E 이미지 프롬프트 (영어)",
-  "thumbnail_text": "썸네일 텍스트"
+  "image_prompt": "DALL-E 이미지 프롬프트 (영어로 자세하게)"
 }
+
+JSON 외에 다른 텍스트는 절대 포함하지 말것!
 """
     
-    response = ask_gpt(content_prompt, 800)
+    response = ask_ai(prompt, 800)
     
-    try:
-        # JSON 추출
-        json_start = response.find('{')
-        json_end = response.rfind('}') + 1
-        json_str = response[json_start:json_end]
-        content_data = json.loads(json_str)
-        return content_data
-    except:
-        return None
+    if response:
+        try:
+            json_start = response.find('{')
+            json_end = response.rfind('}') + 1
+            if json_start >= 0 and json_end > 0:
+                json_str = response[json_start:json_end]
+                return json.loads(json_str)
+        except:
+            pass
+    
+    return None
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -360,46 +367,79 @@ def home():
             # 완전 자동화 영상 생성
             if question == "VIDEO_PACKAGE":
                 answer = "🎬 영상 자동 생성 중...\n"
-                answer += "1️⃣ 콘텐츠 생성\n"
-                answer += "2️⃣ DALL-E 이미지 생성\n"
-                answer += "3️⃣ Google TTS 음성 생성\n"
-                answer += "4️⃣ FFmpeg 영상 편집\n"
-                answer += "5️⃣ YouTube 준비 완료\n"
+                answer += "1️⃣ Claude가 콘텐츠 생성\n"
+                answer += "2️⃣ DALL-E가 이미지 생성\n"
+                answer += "3️⃣ Google TTS가 음성 생성\n"
+                answer += "4️⃣ FFmpeg가 영상 편집\n"
+                answer += "5️⃣ YouTube 업로드 준비\n\n"
                 
-                content_data = video_package()
-                
-                if content_data:
-                    video_path = create_video_from_content(content_data)
+                try:
+                    content_data = video_package_json()
                     
-                    if video_path:
-                        answer += f"\n✅ 영상 생성 완료!\n📁 {video_path}\n\n"
-                        answer += f"📊 정보:\n"
-                        answer += f"제목: {content_data.get('title')}\n"
-                        answer += f"설명: {content_data.get('description')}\n"
-                        answer += f"태그: {', '.join(content_data.get('tags', []))}\n"
+                    if content_data:
+                        video_path = create_simple_video(content_data)
                         
-                        # YouTube 업로드
-                        upload_result = upload_to_youtube(
-                            video_path,
-                            content_data.get('title'),
-                            content_data.get('description'),
-                            content_data.get('tags', [])
-                        )
-                        
-                        if upload_result.get('status') == 'success':
-                            answer += f"\n🎉 YouTube 업로드 완료!\n"
-                            answer += f"🔗 {upload_result.get('url')}\n"
-                        elif upload_result.get('status') == 'auth_required':
-                            answer += f"\n⚠️ YouTube 인증 필요\n"
-                            answer += f"링크: {upload_result.get('auth_url')}\n"
+                        if video_path:
+                            answer += f"✅ 영상 생성 완료!\n📁 {video_path}\n\n"
+                            answer += f"📊 정보:\n"
+                            answer += f"제목: {content_data.get('title')}\n"
+                            answer += f"설명: {content_data.get('description')}\n"
+                            answer += f"태그: {', '.join(content_data.get('tags', []))}\n"
+                            
+                            # YouTube 업로드 시도
+                            upload_result = upload_to_youtube(
+                                video_path,
+                                content_data.get('title'),
+                                content_data.get('description'),
+                                content_data.get('tags', [])
+                            )
+                            
+                            if upload_result.get('status') == 'success':
+                                answer += f"\n🎉 YouTube 업로드 완료!\n"
+                                answer += f"🔗 {upload_result.get('url')}\n"
+                            elif upload_result.get('status') == 'auth_required':
+                                answer += f"\n⚠️ YouTube 인증 필요\n"
+                            else:
+                                answer += f"\n💾 영상 생성됨 (YouTube 업로드 준비)\n"
                         else:
-                            answer += f"\n❌ YouTube 업로드 실패\n{upload_result.get('message')}\n"
+                            answer += "\n❌ 영상 생성 실패"
                     else:
-                        answer += "\n❌ 영상 생성 실패"
-                else:
-                    answer += "\n❌ 콘텐츠 생성 실패"
+                        answer += "\n❌ 콘텐츠 생성 실패"
+                except Exception as e:
+                    answer += f"\n❌ 오류: {str(e)}"
+            
+            # 8개 빠른 버튼
+            elif question == "GET_TRENDS":
+                prompt = "글로벌 SNS에서 주목받을 쇼츠/릴스 트렌드 5개를 추천해줘."
+                answer = ask_ai(prompt, 800)
+            
+            elif question == "MAKE_SHORTS":
+                prompt = "조회수가 잘 나올 쇼츠 아이디어 3개를 만들어줘. 형식: 제목\\n- 설명\\n- 조회수 잠재력"
+                answer = ask_ai(prompt, 900)
+            
+            elif question == "CONTENT_PACKAGE":
+                prompt = "유튜브 쇼츠, 인스타 릴스, 틱톡 동시 업로드 콘텐츠 1개를 만들어줘."
+                answer = ask_ai(prompt, 900)
+            
+            elif question == "MONEY_IDEAS":
+                prompt = "월 10~50만원 부수입 목표로 자동화 가능한 아이디어 5개를 추천해줘."
+                answer = ask_ai(prompt, 900)
+            
+            elif question == "AI_NEWS":
+                prompt = "AI 콘텐츠 사업자가 참고할 만한 AI/테크 이슈 후보 5개를 알려줘."
+                answer = ask_ai(prompt, 800)
+            
+            elif question == "GLOBAL_ISSUES":
+                prompt = "해외 시청자를 노릴 글로벌 이슈형 콘텐츠 주제 5개를 추천해줘."
+                answer = ask_ai(prompt, 800)
+            
+            elif question == "IMAGE_PROMPT":
+                prompt = "유튜브 쇼츠용 이미지 생성 프롬프트를 영어로 5개 만들어줘."
+                answer = ask_ai(prompt, 900)
+            
+            # 일반 질문
             else:
-                answer = ask_gpt(question, 800)
+                answer = ask_ai(question, 800)
             
             if answer:
                 session["history"].append({
@@ -418,34 +458,6 @@ def home():
     )
 
 
-@app.route("/auth/youtube/callback")
-def youtube_callback():
-    """YouTube OAuth 콜백"""
-    try:
-        state = request.args.get('state')
-        code = request.args.get('code')
-        
-        flow = Flow.from_client_secrets_file(
-            CREDENTIALS_FILE,
-            scopes=YOUTUBE_SCOPES,
-            state=state,
-            redirect_uri='https://jarvis-x-61rf.onrender.com/auth/youtube/callback'
-        )
-        flow.client_id = os.getenv("YOUTUBE_CLIENT_ID")
-        flow.client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
-        
-        flow.fetch_token(authorization_response=request.url)
-        
-        creds = flow.credentials
-        with open(TOKEN_FILE, 'w') as token:
-            token.write(creds.to_json())
-        
-        return "✅ YouTube 인증 완료! 이제 자동 업로드가 가능합니다."
-    
-    except Exception as e:
-        return f"❌ 오류: {str(e)}"
-
-
 @app.route("/auto-create", methods=["GET"])
 def auto_create():
     """자동 콘텐츠 + 영상 생성"""
@@ -459,9 +471,9 @@ def auto_create():
         results = []
         
         try:
-            content_data = video_package()
+            content_data = video_package_json()
             if content_data:
-                video_path = create_video_from_content(content_data)
+                video_path = create_simple_video(content_data)
                 if video_path:
                     results.append("✅ 영상 생성 완료")
                     
@@ -473,9 +485,9 @@ def auto_create():
                     )
                     
                     if upload_result.get('status') == 'success':
-                        results.append(f"✅ YouTube 업로드 완료: {upload_result.get('url')}")
+                        results.append(f"✅ YouTube 업로드: {upload_result.get('url')}")
                     else:
-                        results.append("⚠️ YouTube 업로드 보류 (인증 필요)")
+                        results.append("✅ 영상 준비 완료 (YouTube 업로드 대기)")
                 else:
                     results.append("❌ 영상 생성 실패")
             else:
