@@ -119,15 +119,23 @@ SYSTEM_PROMPT = """
 YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 TOKEN_FILE = "youtube_token.json"
 
-# Render 환경변수에서 YouTube 토큰 로드 (YOUTUBE_TOKEN_JSON 설정 시)
+# Render 환경변수에서 YouTube 토큰 로드 (매 시작마다 덮어쓰기 — 에피머럴 파일시스템)
 _yt_token_env = os.getenv("YOUTUBE_TOKEN_JSON", "").strip()
-if _yt_token_env and not os.path.exists(TOKEN_FILE):
+if _yt_token_env:
     try:
+        _yt_token_data = json.loads(_yt_token_env)   # JSON 유효성 먼저 확인
         with open(TOKEN_FILE, "w", encoding="utf-8") as _f:
-            _f.write(_yt_token_env)
-        print(f"[INFO] YouTube 토큰을 환경변수에서 로드: {TOKEN_FILE}")
+            json.dump(_yt_token_data, _f)
+        print(f"[INFO] YouTube 토큰 환경변수에서 로드 완료: {TOKEN_FILE}")
+        print(f"[INFO] 토큰 필드: {list(_yt_token_data.keys())}")
+    except json.JSONDecodeError as _e:
+        print(f"[ERROR] YOUTUBE_TOKEN_JSON 환경변수가 유효하지 않은 JSON: {_e}")
     except Exception as _e:
-        print(f"[WARN] YouTube 토큰 파일 저장 실패: {_e}")
+        print(f"[ERROR] YouTube 토큰 파일 저장 실패: {_e}")
+elif os.path.exists(TOKEN_FILE):
+    print(f"[INFO] YouTube 토큰 파일 존재 (env var 없음): {TOKEN_FILE}")
+else:
+    print("[WARN] YouTube 토큰 없음 — YOUTUBE_TOKEN_JSON 환경변수를 Render에 설정하세요")
 
 
 # ── AI 호출 ──────────────────────────────────────────────────────────────────
@@ -273,52 +281,98 @@ def create_simple_video(content_data):
 
 def get_youtube_service():
     if not GOOGLE_AVAILABLE:
+        print("[WARN] get_youtube_service: Google 패키지 미설치")
         return None, "google_packages_not_installed"
     try:
-        creds = None
-        if os.path.exists(TOKEN_FILE):
-            creds = Credentials.from_authorized_user_file(TOKEN_FILE, YOUTUBE_SCOPES)
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
+        if not os.path.exists(TOKEN_FILE):
+            print(f"[ERROR] get_youtube_service: 토큰 파일 없음 ({TOKEN_FILE})")
+            return None, "token_file_not_found"
+
+        creds = Credentials.from_authorized_user_file(TOKEN_FILE, YOUTUBE_SCOPES)
+        print(f"[INFO] get_youtube_service: valid={creds.valid}, expired={creds.expired}, "
+              f"has_refresh_token={bool(creds.refresh_token)}")
+
+        if not creds.valid:
+            if creds.expired and creds.refresh_token:
+                print("[INFO] get_youtube_service: 액세스 토큰 만료 → 갱신 중...")
                 creds.refresh(Request())
+                # 갱신된 토큰을 파일에 저장 (세션 내 재사용)
+                with open(TOKEN_FILE, "w", encoding="utf-8") as _f:
+                    _f.write(creds.to_json())
+                print("[INFO] get_youtube_service: 토큰 갱신 완료 및 저장")
             else:
+                print(f"[ERROR] get_youtube_service: 재인증 필요 "
+                      f"(expired={creds.expired}, has_refresh={bool(creds.refresh_token)})")
                 return None, "auth_required"
-        return build("youtube", "v3", credentials=creds), None
+
+        svc = build("youtube", "v3", credentials=creds)
+        print("[INFO] get_youtube_service: YouTube API 서비스 초기화 성공")
+        return svc, None
     except Exception as e:
-        print(f"[ERROR] get_youtube_service: {e}")
+        print(f"[ERROR] get_youtube_service 예외: {e}")
+        print(traceback.format_exc())
         return None, str(e)
 
 
 def upload_to_youtube(video_path, title, description, tags):
     if not GOOGLE_AVAILABLE:
         return {"status": "skipped", "message": "google_packages_not_installed"}
+
+    file_size = os.path.getsize(video_path) if os.path.exists(video_path) else -1
+    print(f"[INFO] upload_to_youtube: 시작 — title={title[:40]!r}, "
+          f"file={video_path}, size={file_size}B")
+
+    if file_size < 0:
+        return {"status": "error", "message": f"영상 파일 없음: {video_path}"}
+
     try:
         svc, err = get_youtube_service()
         if not svc:
-            return {"status": "auth_required", "message": err}
+            status = "auth_required" if err in (
+                "auth_required", "token_file_not_found") else "error"
+            return {"status": status, "message": err}
 
-        media = MediaFileUpload(video_path, mimetype="video/mp4", resumable=True)
-        yt_req = svc.videos().insert(
-            part="snippet,status",
-            body={
-                "snippet": {"title": title, "description": description,
-                            "tags": tags, "categoryId": "22"},
-                "status":  {"privacyStatus": "public", "madeForKids": False}
+        body = {
+            "snippet": {
+                "title":       title[:100],
+                "description": description[:5000],
+                "tags":        tags[:30],
+                "categoryId":  "22"
             },
-            media_body=media
-        )
+            "status": {"privacyStatus": "public", "madeForKids": False}
+        }
+        media = MediaFileUpload(video_path, mimetype="video/mp4", resumable=True)
+        yt_req = svc.videos().insert(part="snippet,status", body=body, media_body=media)
+        print("[INFO] upload_to_youtube: API 업로드 요청 시작")
+
         response = None
+        chunk = 0
         while response is None:
             try:
-                _, response = yt_req.next_chunk()
+                status_obj, response = yt_req.next_chunk()
+                chunk += 1
+                if status_obj:
+                    pct = int(status_obj.resumable_progress /
+                              status_obj.resumable_total * 100)
+                    print(f"[INFO] upload_to_youtube: 업로드 {pct}% (chunk {chunk})")
             except HttpError as e:
-                return {"status": "error", "message": str(e)}
+                body_text = e.content.decode("utf-8", errors="ignore")[:300]
+                print(f"[ERROR] upload_to_youtube HttpError: "
+                      f"status={e.resp.status} body={body_text}")
+                print(traceback.format_exc())
+                return {"status": "error",
+                        "message": f"HTTP {e.resp.status}: {body_text}"}
 
-        print(f"[INFO] YouTube 업로드 완료: {response['id']}")
-        return {"status": "success", "video_id": response["id"],
-                "url": f"https://www.youtube.com/watch?v={response['id']}"}
+        video_id = response.get("id", "")
+        print(f"[INFO] upload_to_youtube: 업로드 완료 — video_id={video_id}")
+        return {
+            "status":   "success",
+            "video_id": video_id,
+            "url":      f"https://www.youtube.com/watch?v={video_id}"
+        }
     except Exception as e:
-        print(f"[ERROR] upload_to_youtube: {e}")
+        print(f"[ERROR] upload_to_youtube 예외: {e}")
+        print(traceback.format_exc())
         return {"status": "error", "message": str(e)}
 
 
@@ -397,14 +451,17 @@ def _run_video_job(job_id: str) -> None:
             content_data.get("description", ""),
             content_data.get("tags", [])
         )
-        if upload.get("status") == "success":
+        yt_status = upload.get("status")
+        if yt_status == "success":
             _append_log(job_id, f"✅ YouTube 업로드 완료!\n🔗 {upload.get('url')}")
-        elif upload.get("status") == "auth_required":
-            _append_log(job_id, "⚠️ YouTube 인증 필요 - 영상은 서버에 저장됨")
-        elif upload.get("status") == "skipped":
-            _append_log(job_id, "💾 YouTube 업로드 건너뜀 (Google 패키지 미설치)")
+        elif yt_status == "auth_required":
+            _append_log(job_id,
+                f"⚠️ YouTube 인증 필요: {upload.get('message', '')}\n"
+                f"→ Render 환경변수 YOUTUBE_TOKEN_JSON 확인 후 /test-youtube 로 진단")
+        elif yt_status == "skipped":
+            _append_log(job_id, "💾 YouTube 건너뜀 (Google 패키지 미설치)")
         else:
-            _append_log(job_id, f"⚠️ YouTube 업로드 실패: {upload.get('message')}")
+            _append_log(job_id, f"❌ YouTube 업로드 실패: {upload.get('message', '알 수 없는 오류')}")
 
         _update_job(job_id, status="done", youtube=upload)
 
@@ -596,6 +653,66 @@ def debug():
         "python_version":        __import__("sys").version,
         "timestamp":             datetime.now().isoformat()
     }), 200
+
+
+@app.route("/test-youtube", methods=["GET"])
+def test_youtube():
+    """YouTube 연결 상태 진단"""
+    result = {
+        "google_available":   GOOGLE_AVAILABLE,
+        "token_file_exists":  os.path.exists(TOKEN_FILE),
+        "token_env_set":      bool(os.getenv("YOUTUBE_TOKEN_JSON", "").strip()),
+        "timestamp":          datetime.now().isoformat(),
+    }
+
+    if not GOOGLE_AVAILABLE:
+        result["status"] = "error"
+        result["message"] = "Google 패키지 미설치 (requirements.txt 확인)"
+        return jsonify(result), 200
+
+    if not os.path.exists(TOKEN_FILE):
+        result["status"] = "error"
+        result["message"] = ("youtube_token.json 없음 — "
+                             "Render 환경변수 YOUTUBE_TOKEN_JSON 설정 필요")
+        return jsonify(result), 200
+
+    # 토큰 파일 내용 확인 (민감정보 제외)
+    try:
+        with open(TOKEN_FILE, encoding="utf-8") as _f:
+            td = json.load(_f)
+        result["token_fields"]      = list(td.keys())
+        result["has_refresh_token"] = bool(td.get("refresh_token"))
+        result["has_client_id"]     = bool(td.get("client_id"))
+        result["token_expiry"]      = td.get("expiry") or td.get("token_expiry", "unknown")
+    except Exception as e:
+        result["status"] = "error"
+        result["message"] = f"토큰 파일 파싱 오류: {e}"
+        return jsonify(result), 200
+
+    # YouTube API 서비스 초기화 및 채널 정보 조회
+    try:
+        svc, err = get_youtube_service()
+        if not svc:
+            result["status"] = "error"
+            result["auth_error"] = err
+            return jsonify(result), 200
+
+        ch = svc.channels().list(part="snippet", mine=True).execute()
+        items = ch.get("items", [])
+        if items:
+            result["channel_name"] = items[0]["snippet"]["title"]
+            result["channel_id"]   = items[0]["id"]
+            result["status"]  = "ok"
+            result["message"] = "YouTube API 연결 정상 — 업로드 준비 완료"
+        else:
+            result["status"]  = "warning"
+            result["message"] = "API 연결 성공이나 채널 정보 없음 (권한 확인)"
+    except Exception as e:
+        result["status"]    = "error"
+        result["api_error"] = str(e)
+        result["traceback"] = traceback.format_exc()[-600:]
+
+    return jsonify(result), 200
 
 
 @app.route("/test-ffmpeg", methods=["GET"])
