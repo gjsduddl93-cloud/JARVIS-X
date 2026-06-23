@@ -1,11 +1,20 @@
 from flask import Flask, render_template, request, session, jsonify, redirect
 from anthropic import Anthropic
 from openai import OpenAI
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaFileUpload
+try:
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import Flow
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+    from googleapiclient.http import MediaFileUpload
+    GOOGLE_AVAILABLE = True
+except ImportError:
+    Credentials = None
+    Flow = None
+    build = None
+    HttpError = None
+    MediaFileUpload = None
+    GOOGLE_AVAILABLE = False
 from dotenv import load_dotenv
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
