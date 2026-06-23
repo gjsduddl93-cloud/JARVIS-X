@@ -184,132 +184,32 @@ def ask_ai(user_prompt, max_tokens=1024, prefer_claude=True):
 # ── 이미지 / 영상 생성 ────────────────────────────────────────────────────────
 
 
-def _draw_wrapped_text(draw, text, font, x, y, max_x, color, line_height=60):
-    """텍스트를 max_x 너비에 맞게 자동 줄바꿈하여 그린다. 최종 y 좌표 반환."""
-    max_w = max_x - x
-    lines = []
-    current = ""
-    for ch in text:
-        test = current + ch
-        try:
-            bbox = draw.textbbox((0, 0), test, font=font)
-            w = bbox[2] - bbox[0]
-        except Exception:
-            w = len(test) * 20
-        if w > max_w and current:
-            lines.append(current)
-            current = ch
-        else:
-            current = test
-    if current:
-        lines.append(current)
-    for line in lines:
-        draw.text((x, y), line, fill=color, font=font)
-        y += line_height
-    return y
+def _find_korean_font():
+    """시스템에서 한글 지원 폰트 경로 반환. 없으면 None."""
+    candidates = [
+        "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
+        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+        "/usr/share/fonts/truetype/nanum/NanumBarunGothicBold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "C:/Windows/Fonts/malgun.ttf",
+    ]
+    for fp in candidates:
+        if os.path.exists(fp):
+            return fp
+    return None
 
 
-def create_text_image(content_data: dict) -> str | None:
-    """Pillow로 콘텐츠 정보가 담긴 1080×1920 텍스트 이미지 생성"""
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-    except ImportError:
-        print("[WARN] create_text_image: Pillow 미설치")
-        return None
-    try:
-        W, H = 1080, 1920
-        img = Image.new("RGB", (W, H), (13, 13, 26))
-        draw = ImageDraw.Draw(img)
-
-        # 배경: 상단 다크네이비 / 하단 다크퍼플 (루프 없이 직사각형 2개)
-        draw.rectangle([0, H // 2, W, H], fill=(20, 13, 40))
-
-        # 상하단 파란 액센트 바
-        draw.rectangle([0, 0, W, 10], fill="#0b84ff")
-        draw.rectangle([0, H - 10, W, H], fill="#0b84ff")
-
-        # 폰트 후보 (한글 우선 → 기본 폰트)
-        _font_candidates = [
-            "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
-            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
-            "/usr/share/fonts/truetype/nanum/NanumBarunGothicBold.ttf",
-            "/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-            "C:/Windows/Fonts/malgun.ttf",
-            "C:/Windows/Fonts/arial.ttf",
-            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
-        ]
-
-        def _load(size):
-            for fp in _font_candidates:
-                if os.path.exists(fp):
-                    try:
-                        return ImageFont.truetype(fp, size), fp
-                    except Exception:
-                        continue
-            return ImageFont.load_default(), "default"
-
-        logo_font,  _fp = _load(52)
-        title_font, _fp = _load(68)
-        body_font,  _fp = _load(42)
-        small_font, _fp = _load(32)
-        print(f"[INFO] create_text_image: 폰트={_fp}")
-
-        M = 80  # 좌우 여백
-
-        # 로고
-        draw.text((M, 100), "JARVIS-X", fill="#0b84ff", font=logo_font)
-        draw.text((M, 162), "AI Content Studio", fill="#6699cc", font=small_font)
-        draw.rectangle([M, 228, W - M, 234], fill="#0b84ff")
-
-        # 제목
-        title = content_data.get("title", "오늘의 콘텐츠")
-        y = 280
-        y = _draw_wrapped_text(draw, title, title_font, M, y, W - M, "#ffffff", line_height=86)
-
-        # 구분선
-        y += 20
-        draw.rectangle([M, y, W - M, y + 3], fill="#334466")
-        y += 36
-
-        # 나레이션
-        narration = content_data.get("narration") or content_data.get("description", "")
-        if narration:
-            y = _draw_wrapped_text(draw, narration, body_font, M, y, W - M, "#ccccdd", line_height=56)
-
-        # 태그
-        tags = content_data.get("tags", [])
-        if tags:
-            y += 24
-            tag_text = "  ".join(f"#{t}" for t in tags[:5])
-            y = _draw_wrapped_text(draw, tag_text, small_font, M, y, W - M, "#0b84ff", line_height=44)
-
-        # 날짜
-        draw.text((M, H - 76), datetime.now().strftime("%Y.%m.%d"), fill="#445566", font=small_font)
-
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = os.path.join(IMAGES_DIR, f"image_{ts}.png")
-        img.save(path, "PNG")
-        print(f"[INFO] Pillow 이미지 완료: {path} ({W}x{H})")
-        return path
-    except Exception as e:
-        print(f"[ERROR] create_text_image: {e}")
-        print(traceback.format_exc())
-        return None
+def _text_wrap(text, width):
+    """텍스트를 width 글자 단위로 줄바꿈 (\\n 구분)."""
+    lines = [text[i:i+width] for i in range(0, len(text), width)]
+    return r"\n".join(lines)
 
 
 def create_simple_video(content_data):
-    """Pillow 텍스트 이미지 → mp4. Pillow 실패 시 단색 배경으로 대체."""
+    """FFmpeg drawtext로 텍스트 오버레이 영상 생성 (Pillow 불필요, 1080×1920)."""
     try:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        image_path = create_text_image(content_data)
-
-        if not image_path:
-            print("[WARN] create_simple_video: Pillow 이미지 실패 → 단색 배경 대체")
-
         video_path = os.path.join(VIDEOS_DIR, f"video_{ts}.mp4")
 
         # ffmpeg 존재 확인
@@ -323,26 +223,71 @@ def create_simple_video(content_data):
             print(f"[ERROR] ffmpeg 실행 불가: {e}")
             return None
 
-        if image_path:
+        font_file = _find_korean_font()
+        print(f"[INFO] 폰트: {font_file or '없음 (텍스트 오버레이 생략)'}")
+
+        title     = content_data.get("title", "오늘의 콘텐츠")
+        narration = content_data.get("narration") or content_data.get("description", "")
+        tags      = content_data.get("tags", [])
+
+        if font_file:
+            # textfile 방식: 특수문자 이스케이프 없이 안전하게 한글 전달
+            def write_textfile(name, text):
+                path = os.path.join(IMAGES_DIR, f"{name}_{ts}.txt")
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+                return path
+
+            title_file = write_textfile("title", title)
+            narr_text  = narration[:120] if narration else ""
+            narr_file  = write_textfile("narr", narr_text) if narr_text else None
+            tag_text   = "  ".join(f"#{t}" for t in tags[:5])
+            tag_file   = write_textfile("tags", tag_text) if tag_text else None
+
+            ff = font_file  # 짧은 이름
+            vf_parts = [
+                # 상단 파란 바
+                "drawbox=x=0:y=0:w=1080:h=10:color=#0b84ff:t=fill",
+                # 하단 파란 바
+                "drawbox=x=0:y=1910:w=1080:h=10:color=#0b84ff:t=fill",
+                # JARVIS-X 로고
+                f"drawtext=textfile='{IMAGES_DIR}/logo_{ts}.txt':x=80:y=100:fontsize=52:fontcolor=#0b84ff:fontfile='{ff}'",
+                # 제목
+                f"drawtext=textfile='{title_file}':x=80:y=280:fontsize=66:fontcolor=white:fontfile='{ff}':line_spacing=12",
+            ]
+
+            # 로고 파일
+            logo_file = os.path.join(IMAGES_DIR, f"logo_{ts}.txt")
+            with open(logo_file, "w", encoding="utf-8") as f:
+                f.write("JARVIS-X")
+
+            if narr_file:
+                vf_parts.append(
+                    f"drawtext=textfile='{narr_file}':x=80:y=700:fontsize=40:fontcolor=#ccccdd:fontfile='{ff}':line_spacing=10"
+                )
+            if tag_file:
+                vf_parts.append(
+                    f"drawtext=textfile='{tag_file}':x=80:y=1600:fontsize=36:fontcolor=#0b84ff:fontfile='{ff}'"
+                )
+
+            vf = ",".join(vf_parts)
             cmd = [
                 "ffmpeg", "-y",
-                "-loop", "1", "-i", image_path,
-                "-c:v", "libx264", "-t", "10",
-                "-pix_fmt", "yuv420p",
-                "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,"
-                       "pad=1080:1920:(ow-iw)/2:(oh-ih)/2",
+                "-f", "lavfi", "-i", "color=c=0x0d0d1a:size=1080x1920:rate=30",
+                "-vf", vf,
+                "-c:v", "libx264", "-t", "10", "-pix_fmt", "yuv420p",
                 video_path
             ]
         else:
+            # 폰트 없으면 단색 배경만
             cmd = [
                 "ffmpeg", "-y",
-                "-f", "lavfi", "-i", "color=c=0x1a1a2e:size=1080x1920:rate=30",
-                "-c:v", "libx264", "-t", "10",
-                "-pix_fmt", "yuv420p",
+                "-f", "lavfi", "-i", "color=c=0x0d0d1a:size=1080x1920:rate=30",
+                "-c:v", "libx264", "-t", "10", "-pix_fmt", "yuv420p",
                 video_path
             ]
 
-        print(f"[INFO] FFmpeg: {' '.join(cmd)}")
+        print(f"[INFO] FFmpeg 실행 중...")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
         if result.returncode == 0 and os.path.exists(video_path):
@@ -350,7 +295,7 @@ def create_simple_video(content_data):
             return video_path
 
         print(f"[ERROR] FFmpeg 실패 rc={result.returncode}")
-        print(f"[ERROR] stderr:\n{result.stderr}")
+        print(f"[ERROR] stderr:\n{result.stderr[-800:]}")
         return None
 
     except Exception as e:
@@ -469,7 +414,7 @@ def _run_video_job(job_id: str) -> None:
         _update_job(job_id, content=content_data)
 
         # Step 2: 이미지 + 영상 생성
-        _append_log(job_id, "2️⃣ Pillow 이미지 생성 후 FFmpeg 영상 변환 중...")
+        _append_log(job_id, "2️⃣ FFmpeg 영상 생성 중 (텍스트 오버레이)...")
         video_path = create_simple_video(content_data)
         if not video_path:
             _append_log(job_id, "❌ 영상 생성 실패 (ffmpeg 확인 필요)")
