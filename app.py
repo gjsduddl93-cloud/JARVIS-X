@@ -183,28 +183,6 @@ def ask_ai(user_prompt, max_tokens=1024, prefer_claude=True):
 
 # ── 이미지 / 영상 생성 ────────────────────────────────────────────────────────
 
-def generate_image_dalle(prompt):
-    if not openai_client:
-        print("[WARN] generate_image_dalle: OPENAI_API_KEY 미설정")
-        return None
-    try:
-        print(f"[INFO] DALL-E 2 생성 시작: {prompt[:80]}...")
-        resp = openai_client.images.generate(
-            prompt=prompt, model="dall-e-2", size="1024x1024", n=1
-        )
-        url = resp.data[0].url
-        img_data = requests.get(url, timeout=30).content
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = os.path.join(IMAGES_DIR, f"image_{ts}.png")
-        with open(path, "wb") as f:
-            f.write(img_data)
-        print(f"[INFO] 이미지 저장: {path} ({len(img_data)} bytes)")
-        return path
-    except Exception as e:
-        print(f"[ERROR] generate_image_dalle 실패: {e}")
-        print(traceback.format_exc())
-        return None
-
 
 def _draw_wrapped_text(draw, text, font, x, y, max_x, color, line_height=60):
     """텍스트를 max_x 너비에 맞게 자동 줄바꿈하여 그린다. 최종 y 좌표 반환."""
@@ -232,7 +210,7 @@ def _draw_wrapped_text(draw, text, font, x, y, max_x, color, line_height=60):
 
 
 def create_text_image(content_data: dict) -> str | None:
-    """Pillow로 콘텐츠 정보가 담긴 1080×1920 이미지 생성 (DALL-E 대체)"""
+    """Pillow로 콘텐츠 정보가 담긴 1080×1920 텍스트 이미지 생성"""
     try:
         from PIL import Image, ImageDraw, ImageFont
     except ImportError:
@@ -327,22 +305,14 @@ def create_text_image(content_data: dict) -> str | None:
 
 
 def create_simple_video(content_data):
-    """이미지 → mp4. DALL-E 실패 시 Pillow 텍스트 이미지, 그것도 실패 시 단색 배경."""
+    """Pillow 텍스트 이미지 → mp4. Pillow 실패 시 단색 배경으로 대체."""
     try:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # 1순위: DALL-E
-        image_path = generate_image_dalle(
-            content_data.get("image_prompt", "Professional video thumbnail")
-        )
-
-        # 2순위: Pillow 텍스트 이미지
-        if not image_path:
-            print("[INFO] create_simple_video: DALL-E 실패 → Pillow 텍스트 이미지 생성")
-            image_path = create_text_image(content_data)
+        image_path = create_text_image(content_data)
 
         if not image_path:
-            print("[WARN] create_simple_video: 이미지 없음 → 단색 배경 대체")
+            print("[WARN] create_simple_video: Pillow 이미지 실패 → 단색 배경 대체")
 
         video_path = os.path.join(VIDEOS_DIR, f"video_{ts}.mp4")
 
@@ -461,8 +431,7 @@ def video_package_json():
   "title": "영상 제목 (30자 이내)",
   "description": "YouTube 설명 (100자 이내)",
   "tags": ["태그1", "태그2", "태그3"],
-  "narration": "30초 분량의 나레이션 (약 150자)",
-  "image_prompt": "DALL-E 이미지 프롬프트 (영어로 자세하게)"
+  "narration": "30초 분량의 나레이션 (약 150자)"
 }
 
 JSON 외에 다른 텍스트는 절대 포함하지 말것!
@@ -504,10 +473,10 @@ def _run_video_job(job_id: str) -> None:
         _update_job(job_id, content=content_data)
 
         # Step 2: 이미지 + 영상 생성
-        _append_log(job_id, "2️⃣ 이미지 생성 중 (DALL-E → Pillow 텍스트 순으로 시도)...")
+        _append_log(job_id, "2️⃣ Pillow 이미지 생성 후 FFmpeg 영상 변환 중...")
         video_path = create_simple_video(content_data)
         if not video_path:
-            _append_log(job_id, "❌ 영상 생성 실패 (ffmpeg/DALL-E 확인 필요)")
+            _append_log(job_id, "❌ 영상 생성 실패 (ffmpeg 확인 필요)")
             _update_job(job_id, status="error",
                         error="영상 생성 실패", content=content_data)
             return
