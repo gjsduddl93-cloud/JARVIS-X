@@ -116,10 +116,7 @@ SYSTEM_PROMPT = """
 6. JSON 형식 요청시 정확한 JSON만 반환
 """
 
-YOUTUBE_SCOPES = [
-    "https://www.googleapis.com/auth/youtube.upload",
-    "https://www.googleapis.com/auth/youtube.readonly",
-]
+YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube"]
 TOKEN_FILE = "youtube_token.json"
 
 # Render 환경변수에서 YouTube 토큰 로드 (매 시작마다 덮어쓰기 — 에피머럴 파일시스템)

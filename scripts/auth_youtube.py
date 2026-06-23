@@ -22,10 +22,7 @@ import os
 import json
 import sys
 
-SCOPES = [
-    "https://www.googleapis.com/auth/youtube.upload",
-    "https://www.googleapis.com/auth/youtube.readonly",
-]
+SCOPES = ["https://www.googleapis.com/auth/youtube"]
 CLIENT_SECRET = "client_secret.json"
 TOKEN_FILE = "youtube_token.json"
 
@@ -36,13 +33,13 @@ def main():
         from google_auth_oauthlib.flow import InstalledAppFlow
         from google.oauth2.credentials import Credentials
     except ImportError:
-        print("❌ google-auth-oauthlib 패키지가 필요합니다.")
+        print("[ERROR] google-auth-oauthlib 패키지가 필요합니다.")
         print("   pip install google-auth-oauthlib google-auth google-api-python-client")
         sys.exit(1)
 
     # client_secret.json 확인
     if not os.path.exists(CLIENT_SECRET):
-        print(f"❌ '{CLIENT_SECRET}' 파일이 없습니다.")
+        print(f"[ERROR] '{CLIENT_SECRET}' 파일이 없습니다.")
         print()
         print("Google Cloud Console에서 OAuth 2.0 자격증명을 만드는 방법:")
         print("  1. https://console.cloud.google.com 접속")
@@ -54,8 +51,8 @@ def main():
         print("  5. JSON 다운로드 → client_secret.json 으로 저장")
         sys.exit(1)
 
-    print("🔑 YouTube OAuth 인증을 시작합니다...")
-    print("   잠시 후 브라우저가 열립니다. Google 계정으로 로그인 후 권한을 허용하세요.")
+    print("[*] YouTube OAuth 인증을 시작합니다...")
+    print("    잠시 후 브라우저가 열립니다. Google 계정으로 로그인 후 권한을 허용하세요.")
     print()
 
     flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET, SCOPES)
@@ -70,13 +67,13 @@ def main():
     with open(TOKEN_FILE, "w", encoding="utf-8") as f:
         json.dump(token_data, f, indent=2, ensure_ascii=False)
 
-    print(f"✅ 인증 완료! '{TOKEN_FILE}' 저장됨")
+    print(f"[OK] 인증 완료! '{TOKEN_FILE}' 저장됨")
     print()
-    print("━" * 60)
+    print("-" * 60)
     print("다음 단계: Render 환경변수에 토큰 추가")
-    print("━" * 60)
+    print("-" * 60)
     print()
-    print("1. Render 대시보드 → 서비스 선택 → Environment 탭")
+    print("1. Render 대시보드 -> 서비스 선택 -> Environment 탭")
     print("2. 아래 내용을 환경변수로 추가:")
     print()
     print("   변수명: YOUTUBE_TOKEN_JSON")
@@ -87,7 +84,7 @@ def main():
     print()
     print("3. Save 후 서비스 재배포")
     print()
-    print("✨ 완료 후 YouTube 자동 업로드가 활성화됩니다!")
+    print("[DONE] 완료 후 YouTube 자동 업로드가 활성화됩니다!")
 
 
 if __name__ == "__main__":
