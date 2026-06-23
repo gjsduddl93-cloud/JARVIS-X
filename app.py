@@ -82,7 +82,8 @@ def ask_claude(user_prompt, max_tokens=1024):
             system=SYSTEM_PROMPT,
             messages=[
                 {"role": "user", "content": user_prompt}
-            ]
+            ],
+            timeout=25.0
         )
         return message.content[0].text
     except Exception as e:
@@ -101,7 +102,8 @@ def ask_chatgpt(user_prompt, max_tokens=1024):
                 {"role": "user", "content": user_prompt}
             ],
             max_tokens=max_tokens,
-            temperature=0.7
+            temperature=0.7,
+            timeout=25.0
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -200,12 +202,16 @@ def create_simple_video(content_data):
         video_path = os.path.join(VIDEOS_DIR, f"video_{timestamp}.mp4")
 
         # ffmpeg 존재 여부 확인
-        ffmpeg_check = subprocess.run(
-            ['ffmpeg', '-version'],
-            capture_output=True, text=True
-        )
-        if ffmpeg_check.returncode != 0:
-            print("[ERROR] create_simple_video: ffmpeg를 찾을 수 없음. PATH를 확인하세요.")
+        try:
+            ffmpeg_check = subprocess.run(
+                ['ffmpeg', '-version'],
+                capture_output=True, text=True, timeout=10
+            )
+            if ffmpeg_check.returncode != 0:
+                print("[ERROR] create_simple_video: ffmpeg를 찾을 수 없음. PATH를 확인하세요.")
+                return None
+        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            print(f"[ERROR] create_simple_video: ffmpeg 실행 불가 - {e}")
             return None
 
         if image_path and audio_path:
@@ -253,7 +259,7 @@ def create_simple_video(content_data):
             ]
 
         print(f"[INFO] FFmpeg 실행: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
         if result.returncode == 0 and os.path.exists(video_path):
             size = os.path.getsize(video_path)
@@ -603,6 +609,28 @@ def auto_create():
 def health():
     """헬스 체크"""
     return {"status": "ok", "timestamp": datetime.now().isoformat()}, 200
+
+
+@app.route("/debug", methods=["GET"])
+def debug():
+    """환경 진단 - API 키 설정 여부, ffmpeg 가용성 확인"""
+    ffmpeg_ok = False
+    ffmpeg_version = None
+    try:
+        r = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+        ffmpeg_ok = r.returncode == 0
+        ffmpeg_version = r.stdout.splitlines()[0] if ffmpeg_ok else r.stderr.splitlines()[0]
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        ffmpeg_version = str(e)
+
+    return jsonify({
+        "anthropic_key_set": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "openai_key_set": bool(os.getenv("OPENAI_API_KEY")),
+        "google_available": GOOGLE_AVAILABLE,
+        "ffmpeg_available": ffmpeg_ok,
+        "ffmpeg_version": ffmpeg_version,
+        "timestamp": datetime.now().isoformat()
+    }), 200
 
 
 @app.route("/reset")
