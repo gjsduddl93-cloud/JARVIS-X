@@ -588,9 +588,9 @@ def test_ffmpeg():
         tmp_path = f.name
     cmd = [
         "ffmpeg", "-y",
-        "-f", "lavfi", "-i", "color=c=0x0d0d1a:size=320x568:rate=24",
+        "-f", "lavfi", "-i", "color=c=0x0d0d1a:size=1080x1920:rate=24",
         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-        "-t", "2", "-pix_fmt", "yuv420p", "-threads", "1",
+        "-t", "5", "-pix_fmt", "yuv420p", "-threads", "1",
         tmp_path
     ]
     try:
