@@ -334,9 +334,15 @@ def create_simple_video(content_data):
             print(f"[ERROR] ffmpeg 실행 불가: {e}")
             return None
 
-        title     = content_data.get("title", "JARVIS-X")
-        narration = content_data.get("narration", "")
-        font_path = _find_font()
+        title      = content_data.get("title", "JARVIS-X")
+        narration  = content_data.get("narration", "")
+        # 영문 텍스트 — FFmpeg 내장 폰트(ASCII)로 항상 표시 가능
+        title_en   = content_data.get("title_en", "") or _ascii_only(title) or "JARVIS-X"
+        narr_en    = content_data.get("narration_en", "") or _ascii_only(narration) or "AI Generated Content"
+        font_path  = _find_font()
+
+        print(f"[VIDEO] title_en={title_en!r}, narr_en_len={len(narr_en)}")
+        print(f"[VIDEO] font_path={font_path}")
 
         base_in  = ["ffmpeg", "-y", "-f", "lavfi",
                     "-i", "color=c=0x0d0d1a:size=1080x1920:rate=24"]
@@ -344,34 +350,36 @@ def create_simple_video(content_data):
                     "-t", "10", "-pix_fmt", "yuv420p", "-threads", "1", video_path]
 
         def _try(label, vf):
+            if os.path.exists(video_path):
+                os.remove(video_path)
             cmd = base_in + ["-vf", vf] + base_out
-            print(f"[VIDEO] 전략: {label}")
+            print(f"[VIDEO] 전략 시도: {label}")
             rc, log = _run_ffmpeg(cmd, log_path)
             ok = rc == 0 and os.path.exists(video_path) and os.path.getsize(video_path) > 1000
             if ok:
-                print(f"[VIDEO] 완료 ({label}): {video_path} ({os.path.getsize(video_path)}B)")
+                print(f"[VIDEO] 성공 ({label}): {os.path.getsize(video_path)}B")
             else:
                 print(f"[VIDEO] 실패 ({label}) rc={rc}")
-                # 실패 시 부분 파일 삭제
                 if os.path.exists(video_path):
                     os.remove(video_path)
             return ok
 
-        # 전략 1: fontfile 지정 drawtext (한국어 지원)
-        if font_path and _try("drawtext+fontfile", _build_drawtext_vf(font_path, title, narration)):
+        # 전략 1: 내장 폰트 drawtext, 영문 텍스트 (폰트 설치 불필요 — 항상 동작)
+        if _try("ascii-builtin", _build_ascii_drawtext_vf(title_en, narr_en)):
             return video_path
 
-        # 전략 2: 내장 폰트 drawtext (ASCII 전용)
-        if _try("drawtext+builtin", _build_ascii_drawtext_vf(title, narration)):
+        # 전략 2: fontfile 지정 drawtext, 한국어 (NanumGothic 있을 때만)
+        if font_path and _try("korean-fontfile",
+                              _build_drawtext_vf(font_path, title, narration)):
             return video_path
 
-        # 전략 3: 단색 배경 (폴백)
+        # 전략 3: 단색 배경 폴백
         print("[VIDEO] 단색 배경 폴백...")
-        cmd_plain = base_in + base_out
-        print(f"[FFMPEG CMD] {' '.join(cmd_plain)}")
-        rc, _ = _run_ffmpeg(cmd_plain, log_path)
+        if os.path.exists(video_path):
+            os.remove(video_path)
+        rc, _ = _run_ffmpeg(base_in + base_out, log_path)
         if rc == 0 and os.path.exists(video_path):
-            print(f"[VIDEO] 단색 완료: {video_path} ({os.path.getsize(video_path)}B)")
+            print(f"[VIDEO] 단색 완료: {os.path.getsize(video_path)}B")
             return video_path
 
         print("[ERROR] 모든 FFmpeg 전략 실패")
@@ -513,10 +521,12 @@ def video_package_json():
 
 반드시 이 JSON 형식으로만 응답:
 {
-  "title": "영상 제목 (30자 이내)",
+  "title": "한국어 영상 제목 (30자 이내)",
+  "title_en": "English title for video overlay (max 40 chars, ASCII only)",
   "description": "YouTube 설명 (100자 이내)",
   "tags": ["태그1", "태그2", "태그3"],
-  "narration": "30초 분량의 나레이션 (약 150자)"
+  "narration": "30초 분량의 나레이션 (약 150자)",
+  "narration_en": "English narration for video overlay (max 120 chars, ASCII only, 3-4 sentences)"
 }
 
 JSON 외에 다른 텍스트는 절대 포함하지 말것!
@@ -765,6 +775,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
+        "version":               "v6-ascii-drawtext",
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
         "anthropic_sdk_version": getattr(_am, "__version__", "unknown"),
