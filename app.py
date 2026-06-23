@@ -214,14 +214,84 @@ def _text_wrap(text, width):
     return r"\n".join(lines)
 
 
+def _ffmpeg_escape(text):
+    """FFmpeg drawtext 필터용 텍스트 이스케이프."""
+    return (text
+            .replace("\\", "\\\\")
+            .replace("'",  "\\'")
+            .replace(":",  "\\:")
+            .replace("[",  "\\[")
+            .replace("]",  "\\]")
+            .replace("%",  "\\%"))
+
+
+def _find_font():
+    """시스템에서 사용 가능한 폰트 경로 반환 (fontconfig 스캔 없이 직접 경로)."""
+    candidates = [
+        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",       # Render (apt.txt)
+        "/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "C:/Windows/Fonts/malgun.ttf",   # Windows 맑은 고딕
+        "C:/Windows/Fonts/arial.ttf",
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            print(f"[INFO] 폰트 발견: {p}")
+            return p
+    print("[WARN] 사용 가능한 폰트 없음 — drawtext 비활성화")
+    return None
+
+
+def _build_drawtext_filter(font_path, title, narration):
+    """title + narration 줄 분할 drawtext 필터 문자열 생성."""
+    parts = []
+    safe_title = _ffmpeg_escape(title[:35])
+    parts.append(
+        f"drawtext=fontfile='{font_path}'"
+        f":text='{safe_title}'"
+        f":fontsize=72:fontcolor=white"
+        f":x=(w-text_w)/2:y=280"
+        f":box=1:boxcolor=black@0.6:boxborderw=12"
+    )
+    # 나레이션 22자씩 최대 5줄
+    lines = [narration[i:i+22] for i in range(0, min(len(narration), 110), 22)]
+    for idx, line in enumerate(lines):
+        y = 460 + idx * 90
+        parts.append(
+            f"drawtext=fontfile='{font_path}'"
+            f":text='{_ffmpeg_escape(line)}'"
+            f":fontsize=48:fontcolor=0xccddff"
+            f":x=(w-text_w)/2:y={y}"
+            f":box=1:boxcolor=black@0.4:boxborderw=8"
+        )
+    return ",".join(parts)
+
+
+def _run_ffmpeg(cmd, log_path, timeout=90):
+    """FFmpeg 실행 (Popen+파일 로그). 반환값: (returncode, log_tail)."""
+    with open(log_path, "w") as lf:
+        proc = subprocess.Popen(cmd, stdout=lf, stderr=lf, close_fds=True)
+    try:
+        rc = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        return -1, "TIMEOUT"
+    try:
+        with open(log_path) as lf:
+            tail = lf.read()[-600:]
+    except Exception:
+        tail = "(로그 없음)"
+    return rc, tail
+
+
 def create_simple_video(content_data):
-    """FFmpeg로 1080×1920 쇼츠 영상 생성. ultrafast preset으로 메모리 절약."""
+    """FFmpeg로 1080×1920 쇼츠 영상 생성. 텍스트 오버레이 포함."""
     try:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         video_path = os.path.join(VIDEOS_DIR, f"video_{ts}.mp4")
-        abs_images = os.path.abspath(IMAGES_DIR)
+        log_path = os.path.join(os.path.abspath(IMAGES_DIR), f"ffmpeg_{ts}.log")
 
-        # ffmpeg 존재 확인
         try:
             chk = subprocess.run(["ffmpeg", "-version"],
                                  capture_output=True, text=True, timeout=10)
@@ -232,43 +302,45 @@ def create_simple_video(content_data):
             print(f"[ERROR] ffmpeg 실행 불가: {e}")
             return None
 
-        # 기본 단색 배경 명령 (항상 성공 가능한 폴백)
-        base_cmd = [
+        title    = content_data.get("title", "JARVIS-X")
+        narration = content_data.get("narration", "")
+        font_path = _find_font()
+
+        base_input = [
             "ffmpeg", "-y",
             "-f", "lavfi", "-i", "color=c=0x0d0d1a:size=1080x1920:rate=24",
+        ]
+        base_output = [
             "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-            "-t", "5", "-pix_fmt", "yuv420p", "-threads", "1",
-            video_path
+            "-t", "10", "-pix_fmt", "yuv420p", "-threads", "1",
+            video_path,
         ]
 
-        # FFmpeg 실행 - 파이프 없이 파일로 출력 (파이프 관련 문제 방지)
-        log_path = os.path.join(abs_images, f"ffmpeg_{ts}.log")
-        print("[INFO] FFmpeg 단색 배경 영상 생성...")
-        with open(log_path, "w") as log_f:
-            proc = subprocess.Popen(
-                base_cmd, stdout=log_f, stderr=log_f,
-                close_fds=True
-            )
-        try:
-            returncode = proc.wait(timeout=60)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-            print("[ERROR] FFmpeg 타임아웃")
-            return None
+        if font_path:
+            vf = _build_drawtext_filter(font_path, title, narration)
+            cmd = base_input + ["-vf", vf] + base_output
+            print(f"[INFO] FFmpeg drawtext 영상 생성 (font={os.path.basename(font_path)})...")
+            rc, tail = _run_ffmpeg(cmd, log_path)
 
-        if returncode == 0 and os.path.exists(video_path):
+            if rc == 0 and os.path.exists(video_path):
+                size = os.path.getsize(video_path)
+                print(f"[INFO] 영상 완료 (drawtext): {video_path} ({size}B)")
+                return video_path
+
+            # drawtext 실패 → 단색 폴백
+            print(f"[WARN] drawtext 실패 rc={rc}, 단색 폴백 시도...\n{tail[-200:]}")
+
+        # 폴백: 단색 배경만
+        cmd_plain = base_input + base_output
+        print("[INFO] FFmpeg 단색 배경 영상 생성 (폴백)...")
+        rc, tail = _run_ffmpeg(cmd_plain, log_path)
+
+        if rc == 0 and os.path.exists(video_path):
             size = os.path.getsize(video_path)
-            print(f"[INFO] 영상 완료: {video_path} ({size} bytes)")
+            print(f"[INFO] 영상 완료 (단색): {video_path} ({size}B)")
             return video_path
 
-        # 로그 파일에서 마지막 에러 읽기
-        try:
-            with open(log_path) as lf:
-                tail = lf.read()[-400:]
-        except Exception:
-            tail = "(로그 없음)"
-        print(f"[ERROR] FFmpeg 실패 rc={returncode}\n{tail}")
+        print(f"[ERROR] FFmpeg 실패 rc={rc}\n{tail}")
         return None
 
     except Exception as e:
@@ -336,14 +408,20 @@ def upload_to_youtube(video_path, title, description, tags):
             "snippet": {
                 "title":       title[:100],
                 "description": description[:5000],
-                "tags":        tags[:30],
-                "categoryId":  "22"
+                "tags":        (tags or [])[:30],
+                "categoryId":  "22",
+                "defaultLanguage": "ko",
             },
-            "status": {"privacyStatus": "public", "madeForKids": False}
+            "status": {
+                "privacyStatus":          "public",
+                "selfDeclaredMadeForKids": False,
+            },
         }
-        media = MediaFileUpload(video_path, mimetype="video/mp4", resumable=True)
+        print(f"[INFO] upload_to_youtube: body snippet.title={body['snippet']['title']!r}")
+        media = MediaFileUpload(video_path, mimetype="video/mp4", resumable=True,
+                                chunksize=5 * 1024 * 1024)
         yt_req = svc.videos().insert(part="snippet,status", body=body, media_body=media)
-        print("[INFO] upload_to_youtube: API 업로드 요청 시작")
+        print("[INFO] upload_to_youtube: API 업로드 요청 시작 (resumable, 5MB chunks)")
 
         response = None
         chunk = 0
@@ -354,21 +432,34 @@ def upload_to_youtube(video_path, title, description, tags):
                 if status_obj:
                     pct = int(status_obj.resumable_progress /
                               status_obj.resumable_total * 100)
-                    print(f"[INFO] upload_to_youtube: 업로드 {pct}% (chunk {chunk})")
+                    print(f"[INFO] upload_to_youtube: {pct}% (chunk {chunk})")
             except HttpError as e:
-                body_text = e.content.decode("utf-8", errors="ignore")[:300]
-                print(f"[ERROR] upload_to_youtube HttpError: "
-                      f"status={e.resp.status} body={body_text}")
+                body_text = e.content.decode("utf-8", errors="ignore")[:500]
+                print(f"[ERROR] upload_to_youtube HttpError: status={e.resp.status}\n{body_text}")
                 print(traceback.format_exc())
                 return {"status": "error",
                         "message": f"HTTP {e.resp.status}: {body_text}"}
 
-        video_id = response.get("id", "")
-        print(f"[INFO] upload_to_youtube: 업로드 완료 — video_id={video_id}")
+        # 전체 응답 로깅
+        print(f"[INFO] upload_to_youtube: 전체 응답 = {json.dumps(response, ensure_ascii=False)[:800]}")
+
+        video_id      = response.get("id", "")
+        upload_status = response.get("status", {}).get("uploadStatus", "unknown")
+        privacy       = response.get("status", {}).get("privacyStatus", "unknown")
+
+        print(f"[INFO] upload_to_youtube: video_id={video_id!r}, "
+              f"uploadStatus={upload_status!r}, privacyStatus={privacy!r}")
+
+        if not video_id:
+            print("[ERROR] upload_to_youtube: video_id 가 비어있음 — 업로드 실패로 처리")
+            return {"status": "error", "message": f"video_id 없음. 응답={response}"}
+
         return {
-            "status":   "success",
-            "video_id": video_id,
-            "url":      f"https://www.youtube.com/watch?v={video_id}"
+            "status":        "success",
+            "video_id":      video_id,
+            "upload_status": upload_status,
+            "privacy":       privacy,
+            "url":           f"https://www.youtube.com/watch?v={video_id}",
         }
     except Exception as e:
         print(f"[ERROR] upload_to_youtube 예외: {e}")
@@ -717,27 +808,48 @@ def test_youtube():
 
 @app.route("/test-ffmpeg", methods=["GET"])
 def test_ffmpeg():
-    """FFmpeg 직접 실행 테스트 (백그라운드 없이 동기 실행)"""
+    """FFmpeg + drawtext 동기 테스트."""
     import tempfile
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False, dir="/tmp") as f:
-        tmp_path = f.name
-    cmd = [
-        "ffmpeg", "-y",
-        "-f", "lavfi", "-i", "color=c=0x0d0d1a:size=1080x1920:rate=24",
-        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-        "-t", "5", "-pix_fmt", "yuv420p", "-threads", "1",
-        tmp_path
-    ]
+    result = {"timestamp": datetime.now().isoformat()}
+
+    # 1) 기본 인코딩 테스트
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+        tmp_plain = f.name
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        size = os.path.getsize(tmp_path) if os.path.exists(tmp_path) else 0
-        return jsonify({
-            "returncode": r.returncode,
-            "file_size": size,
-            "stderr_tail": r.stderr[-300:],
-        }), 200
+        r = subprocess.run([
+            "ffmpeg", "-y", "-f", "lavfi",
+            "-i", "color=c=0x0d0d1a:size=1080x1920:rate=24",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+            "-t", "3", "-pix_fmt", "yuv420p", "-threads", "1", tmp_plain,
+        ], capture_output=True, text=True, timeout=30)
+        result["plain_rc"]   = r.returncode
+        result["plain_size"] = os.path.getsize(tmp_plain) if os.path.exists(tmp_plain) else 0
+        result["plain_err"]  = r.stderr[-200:]
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        result["plain_error"] = str(e)
+
+    # 2) drawtext 테스트 (fontfile 직접 지정)
+    font_path = _find_font()
+    result["font_path"] = font_path
+    if font_path:
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            tmp_text = f.name
+        vf = _build_drawtext_filter(font_path, "JARVIS-X TEST", "텍스트 오버레이 테스트입니다")
+        try:
+            r2 = subprocess.run([
+                "ffmpeg", "-y", "-f", "lavfi",
+                "-i", "color=c=0x0d0d1a:size=1080x1920:rate=24",
+                "-vf", vf,
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                "-t", "3", "-pix_fmt", "yuv420p", "-threads", "1", tmp_text,
+            ], capture_output=True, text=True, timeout=30)
+            result["drawtext_rc"]   = r2.returncode
+            result["drawtext_size"] = os.path.getsize(tmp_text) if os.path.exists(tmp_text) else 0
+            result["drawtext_err"]  = r2.stderr[-300:]
+        except Exception as e:
+            result["drawtext_error"] = str(e)
+
+    return jsonify(result), 200
 
 
 @app.route("/test-ai", methods=["GET"])
