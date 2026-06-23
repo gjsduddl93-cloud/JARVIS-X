@@ -3,16 +3,19 @@ from anthropic import Anthropic
 from openai import OpenAI
 try:
     from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
     from google_auth_oauthlib.flow import Flow
     from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaFileUpload
     GOOGLE_AVAILABLE = True
-except ImportError:
+except ImportError as _google_import_err:
+    print(f"[WARN] Google 패키지 미설치, YouTube 기능 비활성화: {_google_import_err}")
     Credentials = None
+    Request = None
     Flow = None
     build = None
-    HttpError = None
+    HttpError = Exception  # None 대신 Exception으로 fallback해야 except절이 깨지지 않음
     MediaFileUpload = None
     GOOGLE_AVAILABLE = False
 from dotenv import load_dotenv
@@ -21,6 +24,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import os
 import re
 import json
+import traceback
 import requests
 from pathlib import Path
 import subprocess
@@ -82,6 +86,8 @@ def ask_claude(user_prompt, max_tokens=1024):
         )
         return message.content[0].text
     except Exception as e:
+        print(f"[ERROR] ask_claude 실패: {e}")
+        print(traceback.format_exc())
         return None
 
 
@@ -99,6 +105,8 @@ def ask_chatgpt(user_prompt, max_tokens=1024):
         )
         return response.choices[0].message.content
     except Exception as e:
+        print(f"[ERROR] ask_chatgpt 실패: {e}")
+        print(traceback.format_exc())
         return None
 
 
@@ -120,6 +128,7 @@ def ask_ai(user_prompt, max_tokens=1024, prefer_claude=True):
 def generate_image_dalle(prompt):
     """DALL-E로 이미지 생성"""
     try:
+        print(f"[INFO] DALL-E 이미지 생성 시작: {prompt[:80]}...")
         response = openai_client.images.generate(
             prompt=prompt,
             model="dall-e-3",
@@ -127,17 +136,21 @@ def generate_image_dalle(prompt):
             quality="standard",
             n=1
         )
-        
+
         image_url = response.data[0].url
-        img_data = requests.get(image_url).content
+        print(f"[INFO] DALL-E 이미지 URL 획득: {image_url[:60]}...")
+        img_data = requests.get(image_url, timeout=30).content
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         image_path = os.path.join(IMAGES_DIR, f"image_{timestamp}.png")
-        
+
         with open(image_path, 'wb') as f:
             f.write(img_data)
-        
+
+        print(f"[INFO] 이미지 저장 완료: {image_path} ({len(img_data)} bytes)")
         return image_path
     except Exception as e:
+        print(f"[ERROR] generate_image_dalle 실패: {e}")
+        print(traceback.format_exc())
         return None
 
 
@@ -172,106 +185,119 @@ def generate_image_dalle(prompt):
 
 
 def create_simple_video(content_data):
-    """간단한 영상 생성 (텍스트 카드형)"""
+    """간단한 영상 생성 (이미지 → mp4)"""
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
+
         # 이미지 생성
         image_prompt = content_data.get('image_prompt', 'Professional video thumbnail')
         image_path = generate_image_dalle(image_prompt)
-        
+
         if not image_path:
+            print("[ERROR] create_simple_video: 이미지 생성 실패로 영상 생성 중단")
             return None
-        
-        # 음성 생성
-        narration = content_data.get('narration', '')
-        if narration:
-            audio_path = os.path.join(AUDIO_DIR, f"audio_{timestamp}.mp3")
-            # audio_path = generate_audio_tts(narration, audio_path)
-            audio_path = None
-        else:
-            audio_path = None
-        
-        # FFmpeg로 간단한 영상 생성 (이미지 + 음성)
+
+        # 음성은 현재 비활성화 상태
+        audio_path = None
+
         video_path = os.path.join(VIDEOS_DIR, f"video_{timestamp}.mp4")
-        
+
+        # ffmpeg 존재 여부 확인
+        ffmpeg_check = subprocess.run(
+            ['ffmpeg', '-version'],
+            capture_output=True, text=True
+        )
+        if ffmpeg_check.returncode != 0:
+            print("[ERROR] create_simple_video: ffmpeg를 찾을 수 없음. PATH를 확인하세요.")
+            return None
+
         if audio_path:
-            # 오디오 길이 확인
             try:
-                result = subprocess.run(
-                    ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1:nokey=1', audio_path],
-                    capture_output=True,
-                    text=True
+                probe = subprocess.run(
+                    ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                     '-of', 'default=noprint_wrappers=1:nokey=1', audio_path],
+                    capture_output=True, text=True
                 )
-                duration = float(result.stdout.strip()) if result.stdout else 10
-            except:
+                duration = float(probe.stdout.strip()) if probe.stdout.strip() else 10
+            except Exception as e:
+                print(f"[WARN] ffprobe 실패, duration=10 사용: {e}")
                 duration = 10
-            
-            # FFmpeg로 영상 생성
+
             cmd = [
                 'ffmpeg', '-y',
-                '-loop', '1',
-                '-i', image_path,
+                '-loop', '1', '-i', image_path,
                 '-i', audio_path,
-                '-c:v', 'libx264',
-                '-c:a', 'aac',
-                '-shortest',
-                '-pix_fmt', 'yuv420p',
-                '-vf', f'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2',
+                '-c:v', 'libx264', '-c:a', 'aac',
+                '-shortest', '-pix_fmt', 'yuv420p',
+                '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2',
                 video_path
             ]
         else:
-            # 오디오 없이 이미지만
             cmd = [
                 'ffmpeg', '-y',
-                '-loop', '1',
-                '-i', image_path,
+                '-loop', '1', '-i', image_path,
                 '-c:v', 'libx264',
                 '-t', '10',
                 '-pix_fmt', 'yuv420p',
-                '-vf', f'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2',
+                '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2',
                 video_path
             ]
-        
+
+        print(f"[INFO] FFmpeg 실행: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True)
-        
+
         if result.returncode == 0 and os.path.exists(video_path):
+            size = os.path.getsize(video_path)
+            print(f"[INFO] 영상 생성 완료: {video_path} ({size} bytes)")
             return video_path
         else:
+            print(f"[ERROR] FFmpeg 실패 (returncode={result.returncode})")
+            print(f"[ERROR] FFmpeg stdout:\n{result.stdout}")
+            print(f"[ERROR] FFmpeg stderr:\n{result.stderr}")
             return None
-    
+
     except Exception as e:
+        print(f"[ERROR] create_simple_video 예외: {e}")
+        print(traceback.format_exc())
         return None
 
 
 def get_youtube_service():
     """YouTube 서비스 객체 생성"""
+    if not GOOGLE_AVAILABLE:
+        print("[ERROR] get_youtube_service: Google 패키지 미설치")
+        return None, "google_packages_not_installed"
     try:
         creds = None
-        
+
         if os.path.exists(TOKEN_FILE):
             creds = Credentials.from_authorized_user_file(TOKEN_FILE, YOUTUBE_SCOPES)
-        
+
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
                 return None, "auth_required"
-        
+
         return build('youtube', 'v3', credentials=creds), None
-    
+
     except Exception as e:
+        print(f"[ERROR] get_youtube_service 실패: {e}")
+        print(traceback.format_exc())
         return None, str(e)
 
 
 def upload_to_youtube(video_path, title, description, tags):
     """YouTube에 자동 업로드"""
+    if not GOOGLE_AVAILABLE:
+        print("[WARN] upload_to_youtube: Google 패키지 미설치, 업로드 건너뜀")
+        return {"status": "skipped", "message": "google_packages_not_installed"}
     try:
         youtube_service, error = get_youtube_service()
-        
+
         if not youtube_service:
             return {"status": "auth_required", "message": error}
-        
+
         body = {
             'snippet': {
                 'title': title,
@@ -284,29 +310,33 @@ def upload_to_youtube(video_path, title, description, tags):
                 'madeForKids': False
             }
         }
-        
+
         media = MediaFileUpload(video_path, mimetype='video/mp4', resumable=True)
-        
-        request = youtube_service.videos().insert(
+
+        yt_request = youtube_service.videos().insert(
             part='snippet,status',
             body=body,
             media_body=media
         )
-        
+
         response = None
         while response is None:
             try:
-                status, response = request.next_chunk()
+                _status, response = yt_request.next_chunk()
             except HttpError as e:
+                print(f"[ERROR] YouTube upload HttpError: {e}")
                 return {"status": "error", "message": str(e)}
-        
+
+        print(f"[INFO] YouTube 업로드 완료: {response['id']}")
         return {
             "status": "success",
             "video_id": response['id'],
             "url": f"https://www.youtube.com/watch?v={response['id']}"
         }
-    
+
     except Exception as e:
+        print(f"[ERROR] upload_to_youtube 실패: {e}")
+        print(traceback.format_exc())
         return {"status": "error", "message": str(e)}
 
 
@@ -345,20 +375,28 @@ def video_package_json():
 
 JSON 외에 다른 텍스트는 절대 포함하지 말것!
 """
-    
+
+    print("[INFO] video_package_json: AI에 콘텐츠 생성 요청 중...")
     response = ask_ai(prompt, 800)
-    
-    if response:
-        try:
-            json_start = response.find('{')
-            json_end = response.rfind('}') + 1
-            if json_start >= 0 and json_end > 0:
-                json_str = response[json_start:json_end]
-                return json.loads(json_str)
-        except:
-            pass
-    
-    return None
+
+    if not response:
+        print("[ERROR] video_package_json: AI 응답 없음")
+        return None
+
+    try:
+        json_start = response.find('{')
+        json_end = response.rfind('}') + 1
+        if json_start < 0 or json_end <= 0:
+            print(f"[ERROR] video_package_json: JSON 구조 없음. 응답 원문:\n{response}")
+            return None
+        json_str = response[json_start:json_end]
+        data = json.loads(json_str)
+        print(f"[INFO] video_package_json: JSON 파싱 성공 - 제목: {data.get('title')}")
+        return data
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] video_package_json: JSON 파싱 실패 - {e}")
+        print(f"[ERROR] 파싱 시도한 문자열:\n{json_str if 'json_str' in dir() else response}")
+        return None
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -465,6 +503,43 @@ def home():
         "index.html",
         history=session.get("history", [])
     )
+
+
+@app.route("/video-package", methods=["GET", "POST"])
+def video_package():
+    """영상 패키지 생성 전용 API"""
+    print("[INFO] /video-package 요청 시작")
+    try:
+        content_data = video_package_json()
+        if not content_data:
+            return jsonify({"status": "error", "message": "콘텐츠 JSON 생성 실패"}), 500
+
+        video_path = create_simple_video(content_data)
+        if not video_path:
+            return jsonify({
+                "status": "error",
+                "message": "영상 생성 실패 (서버 로그 확인)",
+                "content": content_data
+            }), 500
+
+        upload_result = upload_to_youtube(
+            video_path,
+            content_data.get('title', ''),
+            content_data.get('description', ''),
+            content_data.get('tags', [])
+        )
+
+        return jsonify({
+            "status": "success",
+            "video_path": video_path,
+            "content": content_data,
+            "youtube": upload_result
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] /video-package 예외: {e}")
+        print(traceback.format_exc())
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route("/auto-create", methods=["GET"])
