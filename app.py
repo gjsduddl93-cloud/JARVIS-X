@@ -233,16 +233,34 @@ def create_simple_video(content_data):
             video_path
         ]
 
-        # 단색 배경만 사용 (텍스트 오버레이 없음 - 메모리 절약)
+        # FFmpeg 실행 - 파이프 없이 파일로 출력 (파이프 관련 문제 방지)
+        log_path = os.path.join(abs_images, f"ffmpeg_{ts}.log")
         print("[INFO] FFmpeg 단색 배경 영상 생성...")
-        result = subprocess.run(base_cmd, capture_output=True, text=True, timeout=60)
-        if result.returncode == 0 and os.path.exists(video_path):
+        with open(log_path, "w") as log_f:
+            proc = subprocess.Popen(
+                base_cmd, stdout=log_f, stderr=log_f,
+                close_fds=True
+            )
+        try:
+            returncode = proc.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            print("[ERROR] FFmpeg 타임아웃")
+            return None
+
+        if returncode == 0 and os.path.exists(video_path):
             size = os.path.getsize(video_path)
             print(f"[INFO] 영상 완료: {video_path} ({size} bytes)")
             return video_path
 
-        print(f"[ERROR] FFmpeg 실패 rc={result.returncode}")
-        print(f"[ERROR] stderr:\n{result.stderr[-600:]}")
+        # 로그 파일에서 마지막 에러 읽기
+        try:
+            with open(log_path) as lf:
+                tail = lf.read()[-400:]
+        except Exception:
+            tail = "(로그 없음)"
+        print(f"[ERROR] FFmpeg 실패 rc={returncode}\n{tail}")
         return None
 
     except Exception as e:
