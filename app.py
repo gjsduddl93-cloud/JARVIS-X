@@ -661,8 +661,8 @@ def create_viral_shorts(content_data: dict):
                    "crop=1080:1920,format=yuv420p")
         sub_vf  = base_vf + "," + ",".join(sub_parts)
 
-        # concat demuxer 입력 (input 0)
-        concat_in = ["-f", "concat", "-safe", "0", "-i", concat_txt]
+        # concat demuxer 입력 (input 0) — "ffmpeg -y" 포함 필수
+        concat_in = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt]
 
         def _try(label, cmd, t=120):
             if os.path.exists(video_path):
@@ -1171,7 +1171,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v14-concat-demuxer",
+        "version":               "v15-ffmpeg-fix",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
