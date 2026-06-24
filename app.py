@@ -1257,7 +1257,8 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v11-viral-shorts",
+        "version":               "v12-unsplash-debug",
+        "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
         "anthropic_sdk_version": getattr(_am, "__version__", "unknown"),
@@ -1476,6 +1477,77 @@ def test_ai():
             result["chatgpt"] = {"status": "ok", "response": resp.choices[0].message.content}
     except Exception as e:
         result["chatgpt"] = {"status": "error", "message": str(e)}
+
+    return jsonify(result), 200
+
+
+@app.route("/test-unsplash", methods=["GET"])
+def test_unsplash():
+    """Unsplash API 연결 및 이미지 다운로드 진단"""
+    api_key = os.getenv("UNSPLASH_API_KEY", "").strip()
+    result  = {
+        "timestamp":       datetime.now().isoformat(),
+        "api_key_set":     bool(api_key),
+        "api_key_preview": api_key[:8] + "..." if api_key else "(없음)",
+    }
+
+    if not api_key:
+        result["status"] = "error"
+        result["message"] = "UNSPLASH_API_KEY 환경변수 없음"
+        return jsonify(result), 200
+
+    # ── Unsplash 검색 테스트 ────────────────────────────────────────────────
+    try:
+        resp = requests.get(
+            "https://api.unsplash.com/search/photos",
+            params={"query": "AI technology", "per_page": 3, "orientation": "portrait"},
+            headers={"Authorization": f"Client-ID {api_key}"},
+            timeout=15,
+        )
+        result["search_http_status"] = resp.status_code
+        if resp.status_code != 200:
+            result["status"]  = "error"
+            result["message"] = f"검색 실패 HTTP {resp.status_code}"
+            result["body"]    = resp.text[:300]
+            return jsonify(result), 200
+
+        photos = resp.json().get("results", [])
+        result["search_total"]    = resp.json().get("total", 0)
+        result["photos_returned"] = len(photos)
+
+        if not photos:
+            result["status"]  = "error"
+            result["message"] = "검색 결과 0개 (orientation=portrait 필터 확인)"
+            return jsonify(result), 200
+
+        # ── 이미지 1개 실제 다운로드 테스트 ─────────────────────────────────
+        img_url = photos[0].get("urls", {}).get("regular", "")
+        result["sample_url"] = img_url[:80] + "..." if img_url else ""
+
+        if img_url:
+            try:
+                ir = requests.get(img_url, timeout=20, stream=True)
+                result["download_http_status"] = ir.status_code
+                if ir.status_code == 200:
+                    size = 0
+                    for chunk in ir.iter_content(8192):
+                        size += len(chunk)
+                        if size > 50000:   # 50KB면 충분
+                            break
+                    result["download_size_bytes"] = size
+                    result["download_ok"]         = size > 5000
+                else:
+                    result["download_ok"] = False
+            except Exception as e:
+                result["download_ok"]    = False
+                result["download_error"] = str(e)
+
+        result["status"]  = "ok"
+        result["message"] = "Unsplash 정상"
+    except Exception as e:
+        result["status"]        = "error"
+        result["message"]       = str(e)
+        result["traceback_tail"] = traceback.format_exc()[-400:]
 
     return jsonify(result), 200
 
