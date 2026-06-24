@@ -1,116 +1,130 @@
-name: Auto Create Content Daily
+name: Daily Viral Shorts (15개/일)
 
 on:
   schedule:
-    - cron: '0 8 * * *'   # 매일 08:00 UTC (한국 오후 5시)
-  workflow_dispatch:        # 수동 실행 가능
+    - cron: '0 0 * * *'   # 09:00 KST
+    - cron: '0 3 * * *'   # 12:00 KST
+    - cron: '0 6 * * *'   # 15:00 KST
+    - cron: '0 9 * * *'   # 18:00 KST
+    - cron: '0 12 * * *'  # 21:00 KST
+  workflow_dispatch:       # 수동 실행
 
 jobs:
-  create-content:
+  create-batch:
     runs-on: ubuntu-latest
-    timeout-minutes: 15     # 전체 Job 최대 15분
+    timeout-minutes: 20
 
     steps:
-      # ── 1. Render 콜드 스타트 깨우기 ────────────────────────────────────────
+      # ── 1. Render 콜드 스타트 깨우기 ───────────────────────────────────────────
       - name: Wake up Render service
         run: |
-          echo "🔔 Render 서비스 깨우는 중 (Free 플랜 콜드 스타트 대기)..."
-          # 첫 핑 - 슬립 상태를 깨움
+          echo "🔔 Render 콜드 스타트 대기 중..."
           curl -sf --max-time 60 "${{ secrets.RENDER_URL }}/health" || true
-          # 재시작 완료까지 대기
-          sleep 25
+          sleep 20
           echo "⏰ 대기 완료"
 
-      # ── 2. 서비스 헬스 확인 ─────────────────────────────────────────────────
+      # ── 2. 헬스체크 ─────────────────────────────────────────────────────────────
       - name: Health check
         run: |
           HEALTH=$(curl -sf --max-time 30 "${{ secrets.RENDER_URL }}/health")
           echo "Health: $HEALTH"
           if ! echo "$HEALTH" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('status')=='ok' else 1)"; then
-            echo "❌ Render 서비스 헬스체크 실패"
+            echo "❌ 헬스체크 실패"
             exit 1
           fi
           echo "✅ 서비스 정상"
 
-      # ── 3. 백그라운드 영상 제작 작업 시작 ────────────────────────────────────
-      - name: Start video job
-        id: start_job
+      # ── 3. 배치 영상 3개 시작 ───────────────────────────────────────────────────
+      - name: Start batch (3개)
+        id: batch
         run: |
-          echo "🎬 영상 제작 백그라운드 작업 시작..."
-          RESPONSE=$(curl -sf --max-time 30 -X POST "${{ secrets.RENDER_URL }}/start-video")
-          echo "Response: $RESPONSE"
+          echo "🎬 배치 영상 제작 시작 (3개)..."
+          RESP=$(curl -sf --max-time 30 \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"count":3}' \
+            "${{ secrets.RENDER_URL }}/batch-video")
+          echo "Response: $RESP"
 
-          JOB_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
-          if [ -z "$JOB_ID" ]; then
-            echo "❌ job_id를 가져오지 못했습니다"
-            exit 1
-          fi
-
-          echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
-          echo "✅ 작업 시작됨 - Job ID: $JOB_ID"
-
-      # ── 4. 완료될 때까지 폴링 (최대 10분) ────────────────────────────────────
-      - name: Poll until done
-        run: |
-          JOB_ID="${{ steps.start_job.outputs.job_id }}"
-          MAX_TRIES=60       # 60 × 10초 = 최대 10분
-          PREV_LOG_COUNT=0
-
-          echo "🔄 10초마다 상태 확인 중 (최대 10분)..."
-          echo ""
-
-          for i in $(seq 1 $MAX_TRIES); do
-            RESPONSE=$(curl -sf --max-time 15 "${{ secrets.RENDER_URL }}/status/$JOB_ID" || echo "{}")
-            STATUS=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))" 2>/dev/null || echo "unknown")
-
-            # 새 로그만 출력
-            LOG_COUNT=$(echo "$RESPONSE" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('logs',[])))" 2>/dev/null || echo "0")
-            if [ "$LOG_COUNT" -gt "$PREV_LOG_COUNT" ]; then
-              echo "$RESPONSE" | python3 -c "
+          IDS=$(echo "$RESP" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
-logs = d.get('logs', [])
-prev = $PREV_LOG_COUNT
-for log in logs[prev:]:
-    print(log)
-" 2>/dev/null || true
-              PREV_LOG_COUNT=$LOG_COUNT
-            fi
+print(' '.join(d.get('job_ids', [])))
+")
+          if [ -z "$IDS" ]; then
+            echo "❌ job_ids 없음"
+            exit 1
+          fi
+          echo "job_ids=$IDS" >> $GITHUB_OUTPUT
+          echo "✅ 배치 시작: $IDS"
 
-            # 완료 처리
-            if [ "$STATUS" = "done" ]; then
-              echo ""
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "🎉 영상 제작 파이프라인 완료!"
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      # ── 4. 3개 job 완료까지 폴링 (최대 15분) ────────────────────────────────────
+      - name: Poll all jobs until done
+        run: |
+          export RENDER_URL="${{ secrets.RENDER_URL }}"
+          export JOB_IDS="${{ steps.batch.outputs.job_ids }}"
 
-              TITLE=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); c=d.get('content') or {}; print(c.get('title',''))" 2>/dev/null || echo "")
-              YT_STATUS=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); yt=d.get('youtube') or {}; print(yt.get('status',''))" 2>/dev/null || echo "")
-              YT_URL=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); yt=d.get('youtube') or {}; print(yt.get('url','없음'))" 2>/dev/null || echo "없음")
+          python3 - << 'PYEOF'
+import urllib.request, json, time, sys, os
 
-              echo "📋 제목: $TITLE"
-              echo "📺 YouTube 상태: $YT_STATUS"
-              [ "$YT_URL" != "없음" ] && echo "🔗 URL: $YT_URL"
-              exit 0
+base    = os.environ["RENDER_URL"]
+job_ids = os.environ["JOB_IDS"].split()
+done    = set()
+errors  = set()
+total   = len(job_ids)
+start   = time.time()
+MAX_SEC = 840   # 14분
 
-            elif [ "$STATUS" = "error" ]; then
-              ERROR=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('error',''))" 2>/dev/null || echo "")
-              echo ""
-              echo "❌ 작업 실패: $ERROR"
-              exit 1
-            fi
+print(f"🔄 {total}개 job 폴링 시작: {job_ids}")
 
-            echo "[$i/$MAX_TRIES] 진행 중... (status=$STATUS)"
-            sleep 10
-          done
+while len(done) + len(errors) < total:
+    elapsed = time.time() - start
+    if elapsed > MAX_SEC:
+        print(f"⏱ 타임아웃 ({MAX_SEC}초 초과)")
+        sys.exit(1)
 
-          echo "⏱ 타임아웃: ${MAX_TRIES}회 폴링 후 완료되지 않음"
-          exit 1
+    for jid in job_ids:
+        if jid in done or jid in errors:
+            continue
+        try:
+            resp = urllib.request.urlopen(f"{base}/status/{jid}", timeout=15)
+            d    = json.loads(resp.read())
+            st   = d.get("status", "?")
+            logs = d.get("logs", [])
+            last = logs[-1] if logs else ""
+            print(f"  [{jid[:8]}] {st} — {last}")
 
-      # ── 5. 완료 알림 ─────────────────────────────────────────────────────────
-      - name: Done
-        if: success()
+            if st == "done":
+                yt  = (d.get("youtube") or {}).get("url", "")
+                ttl = (d.get("content") or {}).get("title", "")
+                print(f"  ✅ {jid[:8]} 완료! 제목: {ttl}")
+                if yt:
+                    print(f"  🔗 {yt}")
+                done.add(jid)
+            elif st == "error":
+                err = d.get("error", "알 수 없음")
+                print(f"  ❌ {jid[:8]} 실패: {err}")
+                errors.add(jid)
+        except Exception as e:
+            print(f"  [{jid[:8]}] 폴링 오류: {e}")
+
+    remaining = total - len(done) - len(errors)
+    if remaining > 0:
+        print(f"  ⏳ {remaining}개 진행 중... ({int(elapsed)}s 경과)")
+        time.sleep(20)
+
+print(f"\n{'='*40}")
+print(f"🏁 배치 완료: 성공 {len(done)}개 / 실패 {len(errors)}개 / 합계 {total}개")
+if errors:
+    sys.exit(1)
+PYEOF
+
+      # ── 5. 완료 요약 ────────────────────────────────────────────────────────────
+      - name: Summary
+        if: always()
         run: |
           echo ""
-          echo "✅ 오늘의 자동화 완료!"
-          echo "🕐 완료 시각: $(date '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "📊 오늘의 자동화 결과"
+          echo "🕐 완료 시각: $(date '+%Y-%m-%d %H:%M:%S UTC') (KST +9h)"
+          STATS=$(curl -sf --max-time 10 "${{ secrets.RENDER_URL }}/stats" || echo "{}")
+          echo "📈 오늘 통계: $STATS"

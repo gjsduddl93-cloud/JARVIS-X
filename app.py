@@ -1480,6 +1480,35 @@ def test_ai():
     return jsonify(result), 200
 
 
+@app.route("/stats", methods=["GET"])
+def stats():
+    """오늘 생성된 영상 통계 (메모리 기반, 재시작 시 초기화)"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    with _jobs_lock:
+        jobs_today = [j for j in _jobs.values()
+                      if j.get("created_at", "").startswith(today)]
+
+    total   = len(jobs_today)
+    done    = sum(1 for j in jobs_today if j.get("status") == "done")
+    error   = sum(1 for j in jobs_today if j.get("status") == "error")
+    running = sum(1 for j in jobs_today if j.get("status") == "running")
+    queued  = sum(1 for j in jobs_today if j.get("status") == "queued")
+    yt_ok   = sum(1 for j in jobs_today
+                  if (j.get("youtube") or {}).get("status") == "success")
+
+    return jsonify({
+        "date":             today,
+        "total_jobs":       total,
+        "done":             done,
+        "youtube_uploaded": yt_ok,
+        "error":            error,
+        "running":          running,
+        "queued":           queued,
+        "all_jobs_count":   len(_jobs),
+        "timestamp":        datetime.now().isoformat(),
+    }), 200
+
+
 @app.route("/reset")
 def reset():
     session.pop("history", None)
