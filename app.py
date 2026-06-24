@@ -326,7 +326,8 @@ def _run_ffmpeg(cmd, log_path, timeout=90):
 
 def create_tts_audio(text: str, lang: str = "ko") -> str | None:
     """ElevenLabs TTS (우선) → gTTS fallback → None 순서로 MP3 생성."""
-    narr = (text or "").strip()[:600]
+    # 150자 제한 → 한국어 TTS 약 40~45초 분량 (Shorts 60초 이내)
+    narr = (text or "").strip()[:150]
     if not narr:
         return None
 
@@ -451,11 +452,11 @@ def create_simple_video(content_data):
             return _ok(label)
 
         # ── 전략 1 (주력): 단색 + ASCII drawtext + TTS 음성 ─────────────────
-        # Render free tier 검증됨. geq/filter_complex 없음 → 빠르고 안정적
+        # Render free tier 안정. geq/filter_complex 없음. 최대 45초 하드캡.
         if audio_path and os.path.exists(audio_path):
             cmd1 = (bg_in + ["-i", audio_path]
                     + ["-vf", ascii_vf]
-                    + vid_enc + aud_enc + ["-shortest", video_path])
+                    + vid_enc + aud_enc + ["-t", "45", "-shortest", video_path])
             if _run("plain+ascii+voice", cmd1):
                 return video_path
 
@@ -463,30 +464,29 @@ def create_simple_video(content_data):
             if ko_vf:
                 cmd2 = (bg_in + ["-i", audio_path]
                         + ["-vf", ko_vf]
-                        + vid_enc + aud_enc + ["-shortest", video_path])
+                        + vid_enc + aud_enc + ["-t", "45", "-shortest", video_path])
                 if _run("plain+korean+voice", cmd2):
                     return video_path
 
             # 전략 3: 단색 + ASCII + 음성 + BGM (filter_complex 오디오만)
-            # geq 없이 drawtext+BGM 믹싱 → 메모리 효율적
             fc3 = (
                 f"[0:v]{ascii_vf}[vout];"
                 f"[1:a]volume=1.0[voice];"
                 f"[2:a]volume=0.25[bgm];"
-                f"[voice][bgm]amix=inputs=2:duration=shortest[aout]"
+                f"[voice][bgm]amix=inputs=2:duration=first[aout]"
             )
             cmd3 = (bg_in
                     + ["-i", audio_path]
                     + ["-f", "lavfi", "-i", bgm_lavfi]
                     + ["-filter_complex", fc3]
                     + ["-map", "[vout]", "-map", "[aout]"]
-                    + vid_enc + aud_enc + ["-shortest", video_path])
+                    + vid_enc + aud_enc + ["-t", "45", "-shortest", video_path])
             if _run("plain+ascii+voice+bgm", cmd3, t=120):
                 return video_path
 
             # 전략 4: 음성만 (텍스트/BGM 모두 실패 시)
             cmd4 = (bg_in + ["-i", audio_path]
-                    + vid_enc + aud_enc + ["-shortest", video_path])
+                    + vid_enc + aud_enc + ["-t", "45", "-shortest", video_path])
             if _run("plain+voice-only", cmd4):
                 return video_path
 
@@ -644,7 +644,7 @@ def video_package_json():
   "title_en": "English title for video overlay (max 40 chars, ASCII only)",
   "description": "YouTube 설명 (150자 이내, 핵심 키워드 포함)",
   "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
-  "narration": "30~45초 분량의 나레이션 (250~350자, 자연스럽고 몰입감 있는 한국어)",
+  "narration": "30~45초 분량의 나레이션 (120~150자, 자연스럽고 몰입감 있는 한국어, 반드시 150자 이하)",
   "narration_en": "English narration summary for overlay (max 200 chars, ASCII only, 4-5 key sentences)"
 }
 
@@ -940,7 +940,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v9-stable-bgm",
+        "version":               "v10-45s-cap",
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
         "anthropic_sdk_version": getattr(_am, "__version__", "unknown"),
