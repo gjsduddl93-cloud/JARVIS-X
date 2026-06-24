@@ -629,10 +629,12 @@ def create_viral_shorts(content_data: dict):
                    "-crf", "28", "-pix_fmt", "yuv420p", "-threads", "1"]
         aud_enc = ["-c:a", "aac", "-b:a", "128k"]
 
-        # 이미지 입력 인수 (-loop 1 = 정지 이미지를 동영상처럼 반복)
+        # 이미지 입력 인수
+        # -r 24: 프레임레이트 고정 (xfade 호환)
+        # -loop 1: 정지 이미지를 동영상처럼 반복
         img_inputs = []
         for ip in img_paths:
-            img_inputs += ["-loop", "1", "-t", str(IMG_DUR), "-i", ip]
+            img_inputs += ["-r", "24", "-loop", "1", "-t", str(IMG_DUR), "-i", ip]
 
         # 오디오 스트림 인덱스 (이미지 n개 이후)
         voice_idx = n       # 예: 5개 이미지면 인덱스 5
@@ -642,25 +644,30 @@ def create_viral_shorts(content_data: dict):
         # zoompan 대신 scale+crop 사용 → Render free tier에서 안정적
         def _ken_burns_vf(i: int) -> str:
             # 5가지 패닝 방향 순환 (홀짝 이미지마다 다른 방향)
-            # (scale_w, scale_h, crop_x_expr, crop_y_expr)
-            # IMG_DUR=5 기준: 40px/s, 66px/s 등
+            # setpts=PTS-STARTPTS: 타임스탬프 0으로 리셋 → xfade 필수 조건
+            # format=yuv420p: 픽셀 포맷 통일 → xfade 포맷 불일치 방지
             pan = [
-                (1300, 1920, "t*40",       "0"),           # 좌→우 수평
-                (1080, 2250, "0",          "t*66"),        # 위→아래 수직
+                (1300, 1920, "t*40",            "0"),      # 좌→우 수평
+                (1080, 2250, "0",               "t*66"),   # 위→아래 수직
                 (1300, 1920, "max(220-t*44,0)", "0"),      # 우→좌 수평
-                (1080, 2250, "0",  "max(330-t*66,0)"),    # 아래→위 수직
-                (1300, 2250, "t*20",       "t*33"),        # 대각선
+                (1080, 2250, "0",   "max(330-t*66,0)"),   # 아래→위 수직
+                (1300, 2250, "t*20",            "t*33"),   # 대각선
             ]
             sw, sh, px, py = pan[i % len(pan)]
             return (
+                f"setpts=PTS-STARTPTS,"
                 f"scale={sw}:{sh}:force_original_aspect_ratio=increase,"
                 f"crop={sw}:{sh},"
                 f"crop=1080:1920:{px}:{py},"
-                f"fps=24,setsar=1"
+                f"format=yuv420p,fps=24,setsar=1"
             )
 
         def _static_vf() -> str:
-            return "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24,setsar=1"
+            return (
+                "setpts=PTS-STARTPTS,"
+                "scale=1080:1920:force_original_aspect_ratio=increase,"
+                "crop=1080:1920,format=yuv420p,fps=24,setsar=1"
+            )
 
         # xfade 오프셋: offset_k = (k+1) * (IMG_DUR - FADE_DUR)
         def _xfade_offset(k: int) -> float:
@@ -1257,7 +1264,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v12-unsplash-debug",
+        "version":               "v13-xfade-fix",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
