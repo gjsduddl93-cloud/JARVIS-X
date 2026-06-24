@@ -1,0 +1,26 @@
+name: Deploy to Render on Push
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Trigger Render Deploy Hook
+        run: |
+          echo "Triggering Render deploy..."
+          RESPONSE=$(curl -s -X POST \
+            --max-time 30 \
+            "${{ secrets.RENDER_DEPLOY_HOOK }}")
+          echo "Response: $RESPONSE"
+
+          DEPLOY_ID=$(echo "$RESPONSE" | python3 -c \
+            "import sys,json; d=json.load(sys.stdin); print(d.get('id') or d.get('deploy',{}).get('id','unknown'))" \
+            2>/dev/null || echo "unknown")
+
+          echo "Deploy ID: $DEPLOY_ID"
+          echo "Render deploy triggered. Check https://dashboard.render.com for build progress."
