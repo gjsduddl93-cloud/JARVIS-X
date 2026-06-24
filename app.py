@@ -4,6 +4,7 @@ from openai import OpenAI
 import httpx
 import threading
 import uuid
+import time
 
 try:
     from google.oauth2.credentials import Credentials
@@ -250,8 +251,8 @@ def _find_font():
 
 
 def _build_drawtext_vf(font_path, title, narration):
-    """fontfile 지정 drawtext VF (한국어 지원)."""
-    fp = font_path.replace("\\", "/")   # Windows 경로 보정
+    """fontfile 지정 drawtext VF (한국어 지원, 순차 등장)."""
+    fp = font_path.replace("\\", "/")
     parts = [
         f"drawtext=fontfile='{fp}'"
         f":text='{_ffmpeg_escape(title[:35])}'"
@@ -260,19 +261,22 @@ def _build_drawtext_vf(font_path, title, narration):
         f":box=1:boxcolor=black@0.6:boxborderw=12",
     ]
     lines = [narration[i:i+22] for i in range(0, min(len(narration), 110), 22)]
+    start_times = [1.5, 4.0, 7.0, 10.0]
     for idx, line in enumerate(lines):
+        t = start_times[idx] if idx < len(start_times) else 1.5 + idx * 2.5
         parts.append(
             f"drawtext=fontfile='{fp}'"
             f":text='{_ffmpeg_escape(line)}'"
             f":fontsize=48:fontcolor=0xccddff"
             f":x=(w-text_w)/2:y={460 + idx * 90}"
+            f":enable='gte(t,{t})'"
             f":box=1:boxcolor=black@0.4:boxborderw=8"
         )
     return ",".join(parts)
 
 
 def _build_ascii_drawtext_vf(title, narration):
-    """폰트 없이 FFmpeg 내장 폰트 사용 (ASCII 전용)."""
+    """FFmpeg 내장 폰트 drawtext (ASCII 전용, 순차 등장)."""
     atitle = _ascii_only(title) or "JARVIS-X Auto Video"
     anarr  = _ascii_only(narration) or "AI Generated Content"
     parts  = [
@@ -282,11 +286,14 @@ def _build_ascii_drawtext_vf(title, narration):
         f":box=1:boxcolor=black@0.6:boxborderw=12",
     ]
     lines = [anarr[i:i+30] for i in range(0, min(len(anarr), 120), 30)]
+    start_times = [1.5, 4.0, 7.0, 10.0]
     for idx, line in enumerate(lines):
+        t = start_times[idx] if idx < len(start_times) else 1.5 + idx * 2.5
         parts.append(
             f"drawtext=text='{_ffmpeg_escape(line)}'"
             f":fontsize=48:fontcolor=0xccddff"
             f":x=(w-text_w)/2:y={460 + idx * 90}"
+            f":enable='gte(t,{t})'"
             f":box=1:boxcolor=black@0.4:boxborderw=8"
         )
     return ",".join(parts)
@@ -317,8 +324,32 @@ def _run_ffmpeg(cmd, log_path, timeout=90):
         return rc, "(로그 읽기 실패)"
 
 
+def create_tts_audio(text: str, lang: str = "ko") -> str | None:
+    """gTTS로 한국어 MP3 음성 파일 생성. 실패 시 None 반환."""
+    try:
+        from gtts import gTTS
+    except ImportError:
+        print("[TTS] gTTS 미설치 (pip install gtts) — 음성 없이 진행")
+        return None
+    try:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        audio_path = os.path.join(AUDIO_DIR, f"tts_{ts}.mp3")
+        narr = (text or "").strip()[:400]
+        if not narr:
+            return None
+        print(f"[TTS] 음성 생성 중... ({len(narr)}자)")
+        tts = gTTS(text=narr, lang=lang, slow=False)
+        tts.save(audio_path)
+        size = os.path.getsize(audio_path)
+        print(f"[TTS] 완료: {audio_path} ({size}B)")
+        return audio_path if size > 500 else None
+    except Exception as e:
+        print(f"[TTS] 음성 생성 실패: {e}")
+        return None
+
+
 def create_simple_video(content_data):
-    """FFmpeg 1080×1920 쇼츠 영상 생성. 3단계 텍스트 오버레이 전략."""
+    """gTTS 음성 + 그라데이션 배경 + 텍스트 오버레이 쇼츠 영상 생성."""
     try:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         video_path = os.path.join(VIDEOS_DIR, f"video_{ts}.mp4")
@@ -334,28 +365,58 @@ def create_simple_video(content_data):
             print(f"[ERROR] ffmpeg 실행 불가: {e}")
             return None
 
-        title      = content_data.get("title", "JARVIS-X")
-        narration  = content_data.get("narration", "")
-        # 영문 텍스트 — FFmpeg 내장 폰트(ASCII)로 항상 표시 가능
-        title_en   = content_data.get("title_en", "") or _ascii_only(title) or "JARVIS-X"
-        narr_en    = content_data.get("narration_en", "") or _ascii_only(narration) or "AI Generated Content"
-        font_path  = _find_font()
+        title     = content_data.get("title", "JARVIS-X")
+        narration = content_data.get("narration", "")
+        title_en  = content_data.get("title_en", "") or _ascii_only(title) or "JARVIS-X"
+        narr_en   = content_data.get("narration_en", "") or _ascii_only(narration) or "AI Generated Content"
+        font_path = _find_font()
 
         print(f"[VIDEO] title_en={title_en!r}, narr_en_len={len(narr_en)}")
         print(f"[VIDEO] font_path={font_path}")
 
-        base_in  = ["ffmpeg", "-y", "-f", "lavfi",
-                    "-i", "color=c=0x0d0d1a:size=1080x1920:rate=24"]
-        base_out = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-                    "-t", "10", "-pix_fmt", "yuv420p", "-threads", "1", video_path]
+        # gTTS 음성 생성 (실패해도 영상 제작 계속)
+        audio_path = create_tts_audio(narration or title)
+        print(f"[VIDEO] TTS audio={'있음: ' + audio_path if audio_path else '없음 (무음 영상)'}")
 
-        def _try(label, vf):
+        # 그라데이션 배경 필터 (navy→purple 세로 그라데이션)
+        gradient = (
+            "geq="
+            "r='8+X*15/w+Y*8/h'"
+            ":g='5+X*6/w'"
+            ":b='24+Y*55/h+X*10/w'"
+        )
+
+        # 배경 입력
+        bg_in = ["ffmpeg", "-y", "-f", "lavfi",
+                 "-i", "color=c=0x080818:size=1080x1920:rate=24"]
+
+        # 오디오 인자 (음성 있으면 merge, 없으면 15초 고정)
+        if audio_path and os.path.exists(audio_path):
+            a_in  = ["-i", audio_path]
+            a_out = ["-c:a", "aac", "-b:a", "128k", "-shortest"]
+        else:
+            a_in  = []
+            a_out = ["-t", "15"]
+
+        vid_enc = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+                   "-pix_fmt", "yuv420p", "-threads", "1"]
+
+        def _try(label, text_vf=None, use_gradient=True):
             if os.path.exists(video_path):
                 os.remove(video_path)
-            cmd = base_in + ["-vf", vf] + base_out
+            vf_parts = []
+            if use_gradient:
+                vf_parts.append(gradient)
+            if text_vf:
+                vf_parts.append(text_vf)
+            vf = ",".join(vf_parts) if vf_parts else None
+            cmd = bg_in + a_in
+            if vf:
+                cmd += ["-vf", vf]
+            cmd += vid_enc + a_out + [video_path]
             print(f"[VIDEO] 전략 시도: {label}")
-            rc, log = _run_ffmpeg(cmd, log_path)
-            ok = rc == 0 and os.path.exists(video_path) and os.path.getsize(video_path) > 1000
+            rc, _ = _run_ffmpeg(cmd, log_path)
+            ok = rc == 0 and os.path.exists(video_path) and os.path.getsize(video_path) > 2000
             if ok:
                 print(f"[VIDEO] 성공 ({label}): {os.path.getsize(video_path)}B")
             else:
@@ -364,22 +425,26 @@ def create_simple_video(content_data):
                     os.remove(video_path)
             return ok
 
-        # 전략 1: 내장 폰트 drawtext, 영문 텍스트 (폰트 설치 불필요 — 항상 동작)
-        if _try("ascii-builtin", _build_ascii_drawtext_vf(title_en, narr_en)):
+        # 전략 1: 그라데이션 + ASCII drawtext + 음성 (주력)
+        if _try("gradient+ascii+audio", _build_ascii_drawtext_vf(title_en, narr_en)):
             return video_path
 
-        # 전략 2: fontfile 지정 drawtext, 한국어 (NanumGothic 있을 때만)
-        if font_path and _try("korean-fontfile",
+        # 전략 2: 그라데이션 + 한국어 drawtext + 음성 (NanumGothic 있을 때)
+        if font_path and _try("gradient+korean+audio",
                               _build_drawtext_vf(font_path, title, narration)):
             return video_path
 
-        # 전략 3: 단색 배경 폴백
-        print("[VIDEO] 단색 배경 폴백...")
-        if os.path.exists(video_path):
-            os.remove(video_path)
-        rc, _ = _run_ffmpeg(base_in + base_out, log_path)
-        if rc == 0 and os.path.exists(video_path):
-            print(f"[VIDEO] 단색 완료: {os.path.getsize(video_path)}B")
+        # 전략 3: 그라데이션만 + 음성 (텍스트 렌더링 문제 시)
+        if _try("gradient+audio"):
+            return video_path
+
+        # 전략 4: 단색 + ASCII drawtext (그라데이션 실패 시 폴백, 음성 포함)
+        if _try("plain+ascii+audio", _build_ascii_drawtext_vf(title_en, narr_en),
+                use_gradient=False):
+            return video_path
+
+        # 전략 5: 단색만 (최소 폴백)
+        if _try("plain-only", use_gradient=False):
             return video_path
 
         print("[ERROR] 모든 FFmpeg 전략 실패")
@@ -567,8 +632,8 @@ def _run_video_job(job_id: str) -> None:
         _append_log(job_id, f"✅ 콘텐츠 완료: {content_data.get('title')}")
         _update_job(job_id, content=content_data)
 
-        # Step 2: 이미지 + 영상 생성
-        _append_log(job_id, "2️⃣ FFmpeg 영상 생성 중 (텍스트 오버레이)...")
+        # Step 2: 음성 + 영상 생성
+        _append_log(job_id, "2️⃣ gTTS 음성 생성 + FFmpeg 영상 생성 중...")
         video_path = create_simple_video(content_data)
         if not video_path:
             _append_log(job_id, "❌ 영상 생성 실패 (ffmpeg 확인 필요)")
@@ -667,6 +732,52 @@ def start_video():
     t.start()
     print(f"[INFO] 백그라운드 작업 시작: {job_id}")
     return jsonify({"job_id": job_id, "status": "queued"}), 202
+
+
+@app.route("/batch-video", methods=["POST"])
+def batch_video():
+    """배치 영상 제작 (최대 5개, 순차 실행). POST body: {"count": 5}"""
+    data  = request.get_json(silent=True) or {}
+    count = min(max(int(data.get("count", 5)), 1), 5)
+
+    job_ids = []
+    for i in range(count):
+        _cleanup_old_jobs()
+        job_id = uuid.uuid4().hex[:12]
+        with _jobs_lock:
+            _jobs[job_id] = {
+                "status":     "queued",
+                "logs":       [f"⏳ 배치 {i+1}/{count} — 이전 작업 완료 대기 중..."],
+                "created_at": datetime.now().isoformat(),
+                "content":    None,
+                "video_path": None,
+                "youtube":    None,
+                "error":      None,
+                "batch_index": i + 1,
+                "batch_total": count,
+            }
+        job_ids.append(job_id)
+
+    def _run_batch_sequential(ids):
+        for idx, jid in enumerate(ids):
+            print(f"[BATCH] {idx+1}/{len(ids)} 시작: {jid}")
+            _update_job(jid, logs=[f"🎬 배치 {idx+1}/{len(ids)} 시작..."])
+            _run_video_job(jid)
+            if idx < len(ids) - 1:
+                print(f"[BATCH] {idx+1} 완료. 30초 후 다음 시작...")
+                time.sleep(30)
+        print(f"[BATCH] 전체 {len(ids)}개 완료")
+
+    t = threading.Thread(target=_run_batch_sequential, args=(job_ids,), daemon=True)
+    t.start()
+    print(f"[INFO] 배치 영상 {count}개 시작: {job_ids}")
+
+    return jsonify({
+        "status":    "queued",
+        "batch_size": count,
+        "job_ids":   job_ids,
+        "message":   f"{count}개 영상 순차 제작 시작 (각 완료 후 30초 간격)",
+    }), 202
 
 
 @app.route("/status/<job_id>", methods=["GET"])
@@ -775,7 +886,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v6-ascii-drawtext",
+        "version":               "v7-gtts-gradient",
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
         "anthropic_sdk_version": getattr(_am, "__version__", "unknown"),
