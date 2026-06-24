@@ -261,14 +261,14 @@ def _build_drawtext_vf(font_path, title, narration):
         f":box=1:boxcolor=black@0.6:boxborderw=12",
     ]
     lines = [narration[i:i+22] for i in range(0, min(len(narration), 110), 22)]
-    start_times = [1.5, 4.0, 7.0, 10.0]
+    start_times = [1.5, 5.0, 9.0, 14.0, 20.0]
     for idx, line in enumerate(lines):
-        t = start_times[idx] if idx < len(start_times) else 1.5 + idx * 2.5
+        t = start_times[idx] if idx < len(start_times) else 1.5 + idx * 4.5
         parts.append(
             f"drawtext=fontfile='{fp}'"
             f":text='{_ffmpeg_escape(line)}'"
-            f":fontsize=48:fontcolor=0xccddff"
-            f":x=(w-text_w)/2:y={460 + idx * 90}"
+            f":fontsize=44:fontcolor=0xccddff"
+            f":x=(w-text_w)/2:y={430 + idx * 85}"
             f":enable='gte(t,{t})'"
             f":box=1:boxcolor=black@0.4:boxborderw=8"
         )
@@ -276,23 +276,23 @@ def _build_drawtext_vf(font_path, title, narration):
 
 
 def _build_ascii_drawtext_vf(title, narration):
-    """FFmpeg 내장 폰트 drawtext (ASCII 전용, 순차 등장)."""
-    atitle = _ascii_only(title) or "JARVIS-X Auto Video"
+    """FFmpeg 내장 폰트 drawtext (ASCII 전용, 순차 등장, 30~45초 영상용)."""
+    atitle = _ascii_only(title) or "JARVIS-X"
     anarr  = _ascii_only(narration) or "AI Generated Content"
     parts  = [
         f"drawtext=text='{_ffmpeg_escape(atitle[:40])}'"
-        f":fontsize=72:fontcolor=white"
-        f":x=(w-text_w)/2:y=280"
+        f":fontsize=68:fontcolor=white"
+        f":x=(w-text_w)/2:y=260"
         f":box=1:boxcolor=black@0.6:boxborderw=12",
     ]
-    lines = [anarr[i:i+30] for i in range(0, min(len(anarr), 120), 30)]
-    start_times = [1.5, 4.0, 7.0, 10.0]
+    lines = [anarr[i:i+40] for i in range(0, min(len(anarr), 200), 40)]
+    start_times = [1.5, 5.0, 9.0, 14.0, 20.0]
     for idx, line in enumerate(lines):
-        t = start_times[idx] if idx < len(start_times) else 1.5 + idx * 2.5
+        t = start_times[idx] if idx < len(start_times) else 1.5 + idx * 4.5
         parts.append(
             f"drawtext=text='{_ffmpeg_escape(line)}'"
-            f":fontsize=48:fontcolor=0xccddff"
-            f":x=(w-text_w)/2:y={460 + idx * 90}"
+            f":fontsize=44:fontcolor=0xccddff"
+            f":x=(w-text_w)/2:y={430 + idx * 85}"
             f":enable='gte(t,{t})'"
             f":box=1:boxcolor=black@0.4:boxborderw=8"
         )
@@ -325,43 +325,79 @@ def _run_ffmpeg(cmd, log_path, timeout=90):
 
 
 def create_tts_audio(text: str, lang: str = "ko") -> str | None:
-    """gTTS로 한국어 MP3 음성 파일 생성. 실패 시 None 반환."""
+    """ElevenLabs TTS (우선) → gTTS fallback → None 순서로 MP3 생성."""
+    narr = (text or "").strip()[:600]
+    if not narr:
+        return None
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    audio_path = os.path.join(AUDIO_DIR, f"tts_{ts}.mp3")
+
+    # ── 1. ElevenLabs (고품질 한국어) ─────────────────────────────────────────
+    el_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
+    if el_key:
+        try:
+            voice_id = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+            payload = {
+                "text": narr,
+                "model_id": "eleven_multilingual_v2",
+                "voice_settings": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.75,
+                    "style": 0.0,
+                    "use_speaker_boost": True,
+                },
+            }
+            headers = {
+                "xi-api-key": el_key,
+                "Content-Type": "application/json",
+                "Accept": "audio/mpeg",
+            }
+            print(f"[TTS] ElevenLabs 요청 중... ({len(narr)}자)")
+            resp = requests.post(url, json=payload, headers=headers, timeout=30)
+            if resp.status_code == 200:
+                with open(audio_path, "wb") as f:
+                    f.write(resp.content)
+                size = os.path.getsize(audio_path)
+                print(f"[TTS] ElevenLabs 완료: {audio_path} ({size}B)")
+                if size > 500:
+                    return audio_path
+            else:
+                print(f"[TTS] ElevenLabs HTTP {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            print(f"[TTS] ElevenLabs 예외: {e}")
+    else:
+        print("[TTS] ELEVENLABS_API_KEY 없음 → gTTS 사용")
+
+    # ── 2. gTTS fallback ──────────────────────────────────────────────────────
     try:
         from gtts import gTTS
-    except ImportError:
-        print("[TTS] gTTS 미설치 (pip install gtts) — 음성 없이 진행")
-        return None
-    try:
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        audio_path = os.path.join(AUDIO_DIR, f"tts_{ts}.mp3")
-        narr = (text or "").strip()[:400]
-        if not narr:
-            return None
-        print(f"[TTS] 음성 생성 중... ({len(narr)}자)")
-        tts = gTTS(text=narr, lang=lang, slow=False)
+        print(f"[TTS] gTTS 음성 생성 중... ({len(narr[:400])}자)")
+        tts = gTTS(text=narr[:400], lang=lang, slow=False)
         tts.save(audio_path)
         size = os.path.getsize(audio_path)
-        print(f"[TTS] 완료: {audio_path} ({size}B)")
+        print(f"[TTS] gTTS 완료: {audio_path} ({size}B)")
         return audio_path if size > 500 else None
+    except ImportError:
+        print("[TTS] gTTS 미설치")
     except Exception as e:
-        print(f"[TTS] 음성 생성 실패: {e}")
-        return None
+        print(f"[TTS] gTTS 예외: {e}")
+
+    return None
 
 
 def create_simple_video(content_data):
-    """gTTS 음성 + 그라데이션 배경 + 텍스트 오버레이 쇼츠 영상 생성."""
+    """ElevenLabs/gTTS + 그라데이션 배경 + BGM + 텍스트 오버레이 30~45초 쇼츠."""
     try:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         video_path = os.path.join(VIDEOS_DIR, f"video_{ts}.mp4")
         log_path   = os.path.join(os.path.abspath(IMAGES_DIR), f"ffmpeg_{ts}.log")
 
         try:
-            chk = subprocess.run(["ffmpeg", "-version"],
-                                 capture_output=True, text=True, timeout=10)
-            if chk.returncode != 0:
-                print("[ERROR] ffmpeg 응답 비정상")
-                return None
-        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            subprocess.run(["ffmpeg", "-version"],
+                           capture_output=True, timeout=10).check_returncode()
+        except Exception as e:
             print(f"[ERROR] ffmpeg 실행 불가: {e}")
             return None
 
@@ -371,80 +407,117 @@ def create_simple_video(content_data):
         narr_en   = content_data.get("narration_en", "") or _ascii_only(narration) or "AI Generated Content"
         font_path = _find_font()
 
-        print(f"[VIDEO] title_en={title_en!r}, narr_en_len={len(narr_en)}")
-        print(f"[VIDEO] font_path={font_path}")
+        print(f"[VIDEO] title_en={title_en!r}, narr_en_len={len(narr_en)}, font={font_path}")
 
-        # gTTS 음성 생성 (실패해도 영상 제작 계속)
+        # TTS 음성 생성 (ElevenLabs → gTTS → None)
         audio_path = create_tts_audio(narration or title)
-        print(f"[VIDEO] TTS audio={'있음: ' + audio_path if audio_path else '없음 (무음 영상)'}")
+        print(f"[VIDEO] TTS={'있음:' + audio_path if audio_path else '없음(무음)'}")
 
-        # 그라데이션 배경 필터 (navy→purple 세로 그라데이션)
+        # ── 공통 빌딩블록 ────────────────────────────────────────────────────
+        # navy→purple 그라데이션 배경
         gradient = (
             "geq="
             "r='8+X*15/w+Y*8/h'"
             ":g='5+X*6/w'"
             ":b='24+Y*55/h+X*10/w'"
         )
+        # 전자음악풍 앰비언트 BGM (4화음 드론)
+        bgm_expr = (
+            "0.12*sin(110*2*PI*t)*(0.6+0.4*sin(0.5*2*PI*t))"
+            "+0.08*sin(220*2*PI*t)"
+            "+0.05*sin(330*2*PI*t)"
+            "+0.03*sin(440*2*PI*t)"
+        )
+        bgm_lavfi = f"aevalsrc={bgm_expr}:s=44100:c=stereo"
 
-        # 배경 입력
-        bg_in = ["ffmpeg", "-y", "-f", "lavfi",
-                 "-i", "color=c=0x080818:size=1080x1920:rate=24"]
-
-        # 오디오 인자 (음성 있으면 merge, 없으면 15초 고정)
-        if audio_path and os.path.exists(audio_path):
-            a_in  = ["-i", audio_path]
-            a_out = ["-c:a", "aac", "-b:a", "128k", "-shortest"]
-        else:
-            a_in  = []
-            a_out = ["-t", "15"]
-
+        bg_in   = ["ffmpeg", "-y", "-f", "lavfi",
+                   "-i", "color=c=0x080818:size=1080x1920:rate=24"]
         vid_enc = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
                    "-pix_fmt", "yuv420p", "-threads", "1"]
+        aud_enc = ["-c:a", "aac", "-b:a", "128k"]
 
-        def _try(label, text_vf=None, use_gradient=True):
-            if os.path.exists(video_path):
+        ascii_vf = _build_ascii_drawtext_vf(title_en, narr_en)
+        ko_vf    = (_build_drawtext_vf(font_path, title, narration)
+                    if font_path else None)
+
+        def _ok(label):
+            exists = os.path.exists(video_path)
+            size   = os.path.getsize(video_path) if exists else 0
+            ok     = exists and size > 2000
+            print(f"[VIDEO] {'성공' if ok else '실패'} ({label}){': '+str(size)+'B' if ok else ''}")
+            if not ok and exists:
                 os.remove(video_path)
-            vf_parts = []
-            if use_gradient:
-                vf_parts.append(gradient)
-            if text_vf:
-                vf_parts.append(text_vf)
-            vf = ",".join(vf_parts) if vf_parts else None
-            cmd = bg_in + a_in
-            if vf:
-                cmd += ["-vf", vf]
-            cmd += vid_enc + a_out + [video_path]
-            print(f"[VIDEO] 전략 시도: {label}")
-            rc, _ = _run_ffmpeg(cmd, log_path)
-            ok = rc == 0 and os.path.exists(video_path) and os.path.getsize(video_path) > 2000
-            if ok:
-                print(f"[VIDEO] 성공 ({label}): {os.path.getsize(video_path)}B")
-            else:
-                print(f"[VIDEO] 실패 ({label}) rc={rc}")
-                if os.path.exists(video_path):
-                    os.remove(video_path)
             return ok
 
-        # 전략 1: 그라데이션 + ASCII drawtext + 음성 (주력)
-        if _try("gradient+ascii+audio", _build_ascii_drawtext_vf(title_en, narr_en)):
+        def _run(label, cmd):
+            if os.path.exists(video_path):
+                os.remove(video_path)
+            print(f"[VIDEO] 전략: {label}")
+            _run_ffmpeg(cmd, log_path, timeout=150)
+            return _ok(label)
+
+        # ── 전략 1: 그라데이션 + ASCII text + 음성(voice) + BGM ─────────────
+        if audio_path and os.path.exists(audio_path):
+            full_vf = f"{gradient},{ascii_vf}"
+            fc = (
+                f"[0:v]{full_vf}[vout];"
+                f"[1:a]volume=1.0[voice];"
+                f"[2:a]volume=0.25[bgm];"
+                f"[voice][bgm]amix=inputs=2:duration=shortest[aout]"
+            )
+            cmd = (bg_in
+                   + ["-i", audio_path]
+                   + ["-f", "lavfi", "-i", bgm_lavfi]
+                   + ["-filter_complex", fc]
+                   + ["-map", "[vout]", "-map", "[aout]"]
+                   + vid_enc + aud_enc + ["-shortest", video_path])
+            if _run("gradient+ascii+voice+bgm", cmd):
+                return video_path
+
+            # 전략 2: 그라데이션 + 한국어 + 음성 + BGM
+            if ko_vf:
+                fc2 = (
+                    f"[0:v]{gradient},{ko_vf}[vout];"
+                    f"[1:a]volume=1.0[voice];"
+                    f"[2:a]volume=0.25[bgm];"
+                    f"[voice][bgm]amix=inputs=2:duration=shortest[aout]"
+                )
+                cmd2 = (bg_in
+                        + ["-i", audio_path]
+                        + ["-f", "lavfi", "-i", bgm_lavfi]
+                        + ["-filter_complex", fc2]
+                        + ["-map", "[vout]", "-map", "[aout]"]
+                        + vid_enc + aud_enc + ["-shortest", video_path])
+                if _run("gradient+korean+voice+bgm", cmd2):
+                    return video_path
+
+            # 전략 3: 그라데이션 + ASCII + 음성 (BGM 없이)
+            cmd3 = (bg_in + ["-i", audio_path]
+                    + ["-vf", full_vf]
+                    + vid_enc + aud_enc + ["-shortest", video_path])
+            if _run("gradient+ascii+voice", cmd3):
+                return video_path
+
+            # 전략 4: 단색 + ASCII + 음성 (그라데이션도 없이)
+            cmd4 = (bg_in + ["-i", audio_path]
+                    + ["-vf", ascii_vf]
+                    + vid_enc + aud_enc + ["-shortest", video_path])
+            if _run("plain+ascii+voice", cmd4):
+                return video_path
+
+        # ── 무음 폴백 (40초) ─────────────────────────────────────────────────
+        cmd5 = (bg_in + ["-vf", f"{gradient},{ascii_vf}"]
+                + vid_enc + ["-t", "40", video_path])
+        if _run("gradient+ascii-noaudio", cmd5):
             return video_path
 
-        # 전략 2: 그라데이션 + 한국어 drawtext + 음성 (NanumGothic 있을 때)
-        if font_path and _try("gradient+korean+audio",
-                              _build_drawtext_vf(font_path, title, narration)):
+        cmd6 = (bg_in + ["-vf", ascii_vf]
+                + vid_enc + ["-t", "40", video_path])
+        if _run("plain+ascii-noaudio", cmd6):
             return video_path
 
-        # 전략 3: 그라데이션만 + 음성 (텍스트 렌더링 문제 시)
-        if _try("gradient+audio"):
-            return video_path
-
-        # 전략 4: 단색 + ASCII drawtext (그라데이션 실패 시 폴백, 음성 포함)
-        if _try("plain+ascii+audio", _build_ascii_drawtext_vf(title_en, narr_en),
-                use_gradient=False):
-            return video_path
-
-        # 전략 5: 단색만 (최소 폴백)
-        if _try("plain-only", use_gradient=False):
+        cmd7 = bg_in + vid_enc + ["-t", "40", video_path]
+        if _run("plain-only", cmd7):
             return video_path
 
         print("[ERROR] 모든 FFmpeg 전략 실패")
@@ -582,22 +655,23 @@ def clean_filename(text):
 
 def video_package_json():
     prompt = """
-유튜브 쇼츠/릴스용 30초 영상 데이터를 JSON 형식으로 정확하게 생성해줘.
+유튜브 쇼츠/릴스용 30~45초 영상 데이터를 JSON 형식으로 정확하게 생성해줘.
+트렌디하고 수익성 높은 주제 (AI, 투자, 부업, 생산성, 인생팁 등).
 
 반드시 이 JSON 형식으로만 응답:
 {
-  "title": "한국어 영상 제목 (30자 이내)",
+  "title": "한국어 영상 제목 (30자 이내, 클릭률 높은 제목)",
   "title_en": "English title for video overlay (max 40 chars, ASCII only)",
-  "description": "YouTube 설명 (100자 이내)",
-  "tags": ["태그1", "태그2", "태그3"],
-  "narration": "30초 분량의 나레이션 (약 150자)",
-  "narration_en": "English narration for video overlay (max 120 chars, ASCII only, 3-4 sentences)"
+  "description": "YouTube 설명 (150자 이내, 핵심 키워드 포함)",
+  "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
+  "narration": "30~45초 분량의 나레이션 (250~350자, 자연스럽고 몰입감 있는 한국어)",
+  "narration_en": "English narration summary for overlay (max 200 chars, ASCII only, 4-5 key sentences)"
 }
 
 JSON 외에 다른 텍스트는 절대 포함하지 말것!
 """
     print("[INFO] video_package_json: AI 요청 중...")
-    response = ask_ai(prompt, 800)
+    response = ask_ai(prompt, 1200)
     if not response:
         print("[ERROR] video_package_json: AI 응답 없음")
         return None
@@ -633,7 +707,7 @@ def _run_video_job(job_id: str) -> None:
         _update_job(job_id, content=content_data)
 
         # Step 2: 음성 + 영상 생성
-        _append_log(job_id, "2️⃣ gTTS 음성 생성 + FFmpeg 영상 생성 중...")
+        _append_log(job_id, "2️⃣ ElevenLabs/gTTS 음성 + FFmpeg 영상(BGM 포함) 생성 중...")
         video_path = create_simple_video(content_data)
         if not video_path:
             _append_log(job_id, "❌ 영상 생성 실패 (ffmpeg 확인 필요)")
@@ -886,7 +960,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v7-gtts-gradient",
+        "version":               "v8-elevenlabs-bgm",
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
         "anthropic_sdk_version": getattr(_am, "__version__", "unknown"),
