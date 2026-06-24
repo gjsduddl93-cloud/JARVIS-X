@@ -888,6 +888,168 @@ def clean_filename(text):
     return re.sub(r'[\\/*?:"<>|]', "", text)[:30].strip()
 
 
+# ── YouTube SEO + 썸네일 최적화 ──────────────────────────────────────────────
+
+def _generate_seo_title(title: str, narration: str) -> str:
+    """Claude API로 CTR 최적화 제목 생성. 실패 시 원본 반환."""
+    prompt = (
+        f"아래 유튜브 쇼츠 제목을 CTR이 높아지도록 리라이팅해줘.\n"
+        f"원본: {title}\n내용: {narration[:80]}\n\n"
+        "규칙: 한국어, 100자 이내, 숫자/결과/궁금증 포함, 제목만 반환."
+    )
+    result = ask_claude(prompt, 200)
+    if result:
+        result = result.strip().strip('"').strip("'").strip()
+        if result and len(result) <= 100:
+            return result
+    return title
+
+
+def _create_thumbnail(title_en: str, ts: str | None = None) -> str | None:
+    """FFmpeg로 YouTube 썸네일 생성 (1280x720 JPG)."""
+    if ts is None:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out      = os.path.join(IMAGES_DIR, f"thumbnail_{ts}.jpg")
+    log_path = os.path.join(IMAGES_DIR, f"thumb_{ts}.log")
+    safe_txt = _ffmpeg_escape(_ascii_only(title_en[:32]))
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "lavfi",
+        # 진한 배경: 어두운 네이비 계열
+        "-i", "color=c=0x0d1117:size=1280x720:rate=1",
+        "-vf", (
+            # 채널명 (상단 좌측, 시안색 작은 폰트)
+            "drawtext=text='future.minute':fontsize=30:fontcolor=0x00ffff"
+            ":x=50:y=40:box=0,"
+            # 메인 제목 (중앙, 흰색 큰 폰트)
+            f"drawtext=text='{safe_txt}':fontsize=68:fontcolor=white"
+            ":x=(w-text_w)/2:y=(h-text_h)/2"
+            ":box=1:boxcolor=black@0.55:boxborderw=24,"
+            # 하단 AI 쇼츠 레이블
+            "drawtext=text='AI SHORTS':fontsize=26:fontcolor=0xffd700"
+            ":x=50:y=h-60:box=0"
+        ),
+        "-frames:v", "1",
+        out
+    ]
+    try:
+        _run_ffmpeg(cmd, log_path, timeout=30)
+        if os.path.exists(out) and os.path.getsize(out) > 1000:
+            print(f"[THUMB] 생성 완료: {out}")
+            return out
+    except Exception as e:
+        print(f"[THUMB] 생성 실패: {e}")
+    return None
+
+
+def optimize_youtube_metadata(
+    video_id: str,
+    optimized_title: str,
+    description: str,
+    tags: list,
+    thumbnail_path: str | None = None,
+) -> dict:
+    """YouTube 영상 제목/설명/태그 업데이트 + 썸네일 설정."""
+    if not GOOGLE_AVAILABLE:
+        return {"status": "skipped", "message": "google_packages_not_installed"}
+    try:
+        svc, err = get_youtube_service()
+        if not svc:
+            return {"status": "error", "message": err}
+
+        # 제목/설명/태그 업데이트
+        body = {
+            "id": video_id,
+            "snippet": {
+                "title":       optimized_title[:100],
+                "description": description[:5000],
+                "tags":        (tags or [])[:30],
+                "categoryId":  "22",
+                "defaultLanguage": "ko",
+            },
+        }
+        svc.videos().update(part="snippet", body=body).execute()
+        print(f"[META] 제목 업데이트: {optimized_title[:50]}")
+
+        # 썸네일 업로드 (있을 경우)
+        if thumbnail_path and os.path.exists(thumbnail_path) and MediaFileUpload:
+            media = MediaFileUpload(thumbnail_path, mimetype="image/jpeg")
+            svc.thumbnails().set(videoId=video_id, media_body=media).execute()
+            print(f"[META] 썸네일 업로드: {thumbnail_path}")
+
+        return {
+            "status":   "success",
+            "video_id": video_id,
+            "title":    optimized_title,
+            "thumbnail": thumbnail_path or "없음",
+        }
+    except Exception as e:
+        print(f"[META] 업데이트 실패: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+# ── Instagram Reels 준비 ──────────────────────────────────────────────────────
+
+def _generate_instagram_caption(title: str, narration: str, tags: list) -> str:
+    """YouTube 콘텐츠 → Instagram 캡션 + 해시태그 자동 생성 (최대 2200자)."""
+    prompt = (
+        f"Instagram Reels 캡션을 생성해줘.\n제목: {title}\n내용: {narration[:120]}\n\n"
+        "형식: 첫줄 이모지 포함 카피, 2~3줄 핵심 요약, 해시태그 12개. 500자 이내. 캡션만 반환."
+    )
+    result = ask_claude(prompt, 400)
+    if result and len(result.strip()) > 10:
+        return result.strip()[:2200]
+    # 폴백 기본 캡션
+    ht = " ".join(f"#{t}" for t in (tags or [])[:5])
+    return (
+        f"🤖 {title}\n\n{narration[:200]}\n\n"
+        f"{ht} #AI #부업 #수익화 #쇼츠 #인스타릴스 #자동화 #재테크 #미래직업"
+    )
+
+
+def _convert_resolution_for_instagram(video_path: str) -> str | None:
+    """YouTube 1080x1920 → Instagram Reels 파일 준비.
+    Reels는 9:16(1080x1920) 그대로 지원하므로 파일 복사만 수행."""
+    import shutil
+    ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out = os.path.join(VIDEOS_DIR, f"instagram_{ts}.mp4")
+    try:
+        shutil.copy2(video_path, out)
+        print(f"[INSTAGRAM] Reels 파일 준비: {out}")
+        return out
+    except Exception as e:
+        print(f"[INSTAGRAM] 파일 복사 실패: {e}")
+        return None
+
+
+def upload_to_instagram_reels(video_path: str, caption: str) -> dict:
+    """Instagram Reels 업로드 (Meta Graph API).
+    INSTAGRAM_ACCESS_TOKEN 환경변수가 설정되면 즉시 활성화.
+    현재는 Render ephemeral FS → 외부 공개 URL이 없어 CDN 연동 필요."""
+    token = os.getenv("INSTAGRAM_ACCESS_TOKEN", "").strip()
+    ig_id = os.getenv("INSTAGRAM_USER_ID", "").strip()
+
+    if not token:
+        return {
+            "status":  "pending",
+            "message": "INSTAGRAM_ACCESS_TOKEN 환경변수 설정 후 즉시 활성화",
+        }
+    if not ig_id:
+        return {
+            "status":  "pending",
+            "message": "INSTAGRAM_USER_ID 환경변수 설정 필요",
+        }
+
+    # Meta Graph API Reels 업로드는 공개 CDN URL 필요
+    # (Render ephemeral FS는 외부 접근 불가 → S3/Cloudinary 연동 후 완전 활성화)
+    return {
+        "status":  "pending",
+        "message": "CDN URL 필요 (Render ephemeral FS 미지원). S3 연동 후 활성화 예정.",
+        "caption_preview": caption[:100],
+    }
+
+
 def video_package_json():
     prompt = """
 유튜브 쇼츠/릴스용 30~45초 영상 데이터를 JSON 형식으로 정확하게 생성해줘.
@@ -957,26 +1119,64 @@ def _run_video_job(job_id: str) -> None:
         _update_job(job_id, video_path=video_path)
 
         # Step 3: YouTube 업로드
+        title_ko  = content_data.get("title", "")
+        title_en  = content_data.get("title_en", "") or _ascii_only(title_ko)
+        narration = content_data.get("narration", "")
+        tags      = content_data.get("tags", [])
+        desc      = content_data.get("description", "")
+
         _append_log(job_id, "3️⃣ YouTube 업로드 시도 중...")
-        upload = upload_to_youtube(
-            video_path,
-            content_data.get("title", ""),
-            content_data.get("description", ""),
-            content_data.get("tags", [])
-        )
+        upload = upload_to_youtube(video_path, title_ko, desc, tags)
         yt_status = upload.get("status")
         if yt_status == "success":
             _append_log(job_id, f"✅ YouTube 업로드 완료!\n🔗 {upload.get('url')}")
         elif yt_status == "auth_required":
             _append_log(job_id,
-                f"⚠️ YouTube 인증 필요: {upload.get('message', '')}\n"
-                f"→ Render 환경변수 YOUTUBE_TOKEN_JSON 확인 후 /test-youtube 로 진단")
+                f"⚠️ YouTube 인증 필요: {upload.get('message', '')}")
         elif yt_status == "skipped":
             _append_log(job_id, "💾 YouTube 건너뜀 (Google 패키지 미설치)")
         else:
             _append_log(job_id, f"❌ YouTube 업로드 실패: {upload.get('message', '알 수 없는 오류')}")
 
-        _update_job(job_id, status="done", youtube=upload)
+        # Step 4: YouTube 메타 최적화 (업로드 성공 시에만)
+        meta_result = {}
+        if yt_status == "success":
+            video_id = upload.get("video_id", "")
+            ts_now   = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            _append_log(job_id, "4️⃣ YouTube SEO 제목 최적화 중...")
+            seo_title = _generate_seo_title(title_ko, narration)
+            _append_log(job_id, f"✅ SEO 제목: {seo_title[:40]}")
+
+            _append_log(job_id, "5️⃣ 썸네일 생성 중 (FFmpeg)...")
+            thumb_path = _create_thumbnail(title_en or title_ko, ts_now)
+            if thumb_path:
+                _append_log(job_id, f"✅ 썸네일 생성: {thumb_path}")
+            else:
+                _append_log(job_id, "⚠️ 썸네일 생성 실패 (원본 제목 사용)")
+
+            _append_log(job_id, "6️⃣ YouTube 제목/썸네일 업데이트 중...")
+            meta_result = optimize_youtube_metadata(
+                video_id, seo_title, desc, tags, thumb_path
+            )
+            if meta_result.get("status") == "success":
+                _append_log(job_id, f"✅ 메타 업데이트 완료: {seo_title[:30]}")
+            else:
+                _append_log(job_id, f"⚠️ 메타 업데이트 실패: {meta_result.get('message','')}")
+
+        # Step 5: Instagram Reels 준비
+        _append_log(job_id, "7️⃣ Instagram Reels 준비 중...")
+        ig_caption  = _generate_instagram_caption(title_ko, narration, tags)
+        ig_vid_path = _convert_resolution_for_instagram(video_path)
+        ig_result   = upload_to_instagram_reels(ig_vid_path or video_path, ig_caption)
+        ig_status   = ig_result.get("status")
+        if ig_status == "success":
+            _append_log(job_id, f"✅ Instagram 업로드 완료!")
+        else:
+            _append_log(job_id, f"📱 Instagram: {ig_result.get('message','')}")
+
+        _update_job(job_id, status="done", youtube=upload,
+                    youtube_meta=meta_result, instagram=ig_result)
 
     except Exception as e:
         print(f"[ERROR] Job {job_id} 예외: {e}\n{traceback.format_exc()}")
@@ -1199,7 +1399,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v16-quality-opt",
+        "version":               "v17-yt-meta-ig-prep",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
