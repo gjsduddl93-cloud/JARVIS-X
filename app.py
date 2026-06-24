@@ -30,6 +30,7 @@ import os
 import re
 import json
 import traceback
+import random
 import requests
 import subprocess
 
@@ -600,14 +601,14 @@ def create_viral_shorts(content_data: dict):
         narr_en   = content_data.get("narration_en", "") or _ascii_only(narration) or "AI Content"
         keywords  = content_data.get("keywords", [title_en])
 
-        # ── 1. Unsplash 이미지 다운로드 ──────────────────────────────────────
-        img_paths = _download_unsplash_images(keywords, count=5)
+        # ── 1. Unsplash 이미지 다운로드 (8개로 증가 → 더 다양한 장면) ──────────
+        img_paths = _download_unsplash_images(keywords, count=8)
         if len(img_paths) < 2:
             print("[VIRAL] 이미지 부족 → create_simple_video 폴백")
             return create_simple_video(content_data)
 
         n       = len(img_paths)
-        IMG_DUR = 5   # 이미지당 표시 시간 (초)
+        IMG_DUR = 5.5  # 이미지당 표시 시간 (초) — 더 여유있는 호흡
 
         # ── 2. TTS 음성 생성 ─────────────────────────────────────────────────
         audio_path = create_tts_audio(narration or title)
@@ -638,28 +639,55 @@ def create_viral_shorts(content_data: dict):
             f.write(f"file '{os.path.abspath(img_paths[-1])}'\n")
 
         # ── 6. 자막 VF 구성 ──────────────────────────────────────────────────
-        # concat 타임라인: img0=0~5s, img1=5~10s, img2=10~15s ...
+        # A/B 테스트: 자막 색상 랜덤 선택 (조회수 비교용)
+        _sub_colors = ["0x00ffff", "0x00ff00", "0xffd700"]  # cyan / lime / gold
+        sub_color   = random.choice(_sub_colors)
+
+        # concat 타임라인: img0=0~5.5s, img1=5.5~11s ...
         sub_parts = []
         safe_title = _ffmpeg_escape(_ascii_only(title_en[:40]))
         sub_parts.append(
+            # 상단 제목: 64px, 흰색, 처음 3초만 표시
             f"drawtext=text='{safe_title}'"
-            f":fontsize=56:fontcolor=white:x=(w-text_w)/2:y=120"
-            f":enable='between(t,0,3)':box=1:boxcolor=black@0.7:boxborderw=12"
+            f":fontsize=64:fontcolor=white:x=(w-text_w)/2:y=120"
+            f":enable='between(t,0,3)':box=1:boxcolor=black@0.8:boxborderw=12"
         )
         for idx, line in enumerate(subtitle_lines):
             t_s = idx * IMG_DUR + 1.0
             t_e = t_s + IMG_DUR - 1.5
             safe_line = _ffmpeg_escape(_ascii_only(str(line))[:52])
             sub_parts.append(
+                # 하단 자막: 44px, A/B색상, 가독성 80% 박스
                 f"drawtext=text='{safe_line}'"
-                f":fontsize=44:fontcolor=white:x=(w-text_w)/2:y=h-180"
+                f":fontsize=44:fontcolor={sub_color}:x=(w-text_w)/2:y=h-180"
                 f":enable='between(t,{t_s:.1f},{t_e:.1f})'"
-                f":box=1:boxcolor=black@0.65:boxborderw=10"
+                f":box=1:boxcolor=black@0.8:boxborderw=10"
             )
+        print(f"[VIRAL] 자막 색상 A/B: {sub_color} ({len(subtitle_lines)}줄)")
 
-        base_vf = ("scale=1080:1920:force_original_aspect_ratio=increase,"
-                   "crop=1080:1920,format=yuv420p")
+        # Ken Burns: 1.5배 확대 후 이미지별 팬 방향 랜덤 (mod로 이미지당 0~1 진행)
+        # scale 1080*1.5=1620, 1920*1.5=2880 → 여유공간 540(x), 960(y)
+        # mod(t, D)/D → 각 이미지마다 0→1 진행 (D=IMG_DUR)
+        D = IMG_DUR  # 이미지 1장 표시 시간
+        _kb_pans = [
+            # L→R: x 0→540, y 중앙 고정
+            f"crop=1080:1920:x='min(540,max(0,540*mod(t,{D})/{D}))':y=480",
+            # R→L: x 540→0, y 중앙 고정
+            f"crop=1080:1920:x='min(540,max(0,540*(1-mod(t,{D})/{D})))':y=480",
+            # T→B: x 중앙 고정, y 0→960
+            f"crop=1080:1920:x=270:y='min(960,max(0,960*mod(t,{D})/{D}))'",
+            # B→T: x 중앙 고정, y 960→0
+            f"crop=1080:1920:x=270:y='min(960,max(0,960*(1-mod(t,{D})/{D})))'",
+            # diagonal: x 0→540, y 0→480
+            f"crop=1080:1920:x='min(540,max(0,540*mod(t,{D})/{D}))':y='min(480,max(0,480*mod(t,{D})/{D}))'",
+        ]
+        kb_pan  = random.choice(_kb_pans)
+        base_vf = (
+            f"scale=1620:2880:force_original_aspect_ratio=increase,"
+            f"{kb_pan},format=yuv420p"
+        )
         sub_vf  = base_vf + "," + ",".join(sub_parts)
+        print(f"[VIRAL] Ken Burns 팬: {kb_pan[:45]}...")
 
         # concat demuxer 입력 (input 0) — "ffmpeg -y" 포함 필수
         concat_in = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt]
@@ -1171,7 +1199,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v15-ffmpeg-fix",
+        "version":               "v16-quality-opt",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
