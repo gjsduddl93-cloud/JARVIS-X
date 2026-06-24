@@ -414,14 +414,7 @@ def create_simple_video(content_data):
         print(f"[VIDEO] TTS={'있음:' + audio_path if audio_path else '없음(무음)'}")
 
         # ── 공통 빌딩블록 ────────────────────────────────────────────────────
-        # navy→purple 그라데이션 배경
-        gradient = (
-            "geq="
-            "r='8+X*15/w+Y*8/h'"
-            ":g='5+X*6/w'"
-            ":b='24+Y*55/h+X*10/w'"
-        )
-        # 전자음악풍 앰비언트 BGM (4화음 드론)
+        # 전자음악풍 앰비언트 BGM (4화음 드론) — lavfi로 실시간 생성
         bgm_expr = (
             "0.12*sin(110*2*PI*t)*(0.6+0.4*sin(0.5*2*PI*t))"
             "+0.08*sin(220*2*PI*t)"
@@ -430,9 +423,10 @@ def create_simple_video(content_data):
         )
         bgm_lavfi = f"aevalsrc={bgm_expr}:s=44100:c=stereo"
 
+        # geq 그라데이션은 Render 0.1vCPU에서 OOM 유발 → 사용 안 함
         bg_in   = ["ffmpeg", "-y", "-f", "lavfi",
                    "-i", "color=c=0x080818:size=1080x1920:rate=24"]
-        vid_enc = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+        vid_enc = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
                    "-pix_fmt", "yuv420p", "-threads", "1"]
         aud_enc = ["-c:a", "aac", "-b:a", "128k"]
 
@@ -449,75 +443,61 @@ def create_simple_video(content_data):
                 os.remove(video_path)
             return ok
 
-        def _run(label, cmd):
+        def _run(label, cmd, t=90):
             if os.path.exists(video_path):
                 os.remove(video_path)
             print(f"[VIDEO] 전략: {label}")
-            _run_ffmpeg(cmd, log_path, timeout=150)
+            _run_ffmpeg(cmd, log_path, timeout=t)
             return _ok(label)
 
-        # ── 전략 1: 그라데이션 + ASCII text + 음성(voice) + BGM ─────────────
+        # ── 전략 1 (주력): 단색 + ASCII drawtext + TTS 음성 ─────────────────
+        # Render free tier 검증됨. geq/filter_complex 없음 → 빠르고 안정적
         if audio_path and os.path.exists(audio_path):
-            full_vf = f"{gradient},{ascii_vf}"
-            fc = (
-                f"[0:v]{full_vf}[vout];"
+            cmd1 = (bg_in + ["-i", audio_path]
+                    + ["-vf", ascii_vf]
+                    + vid_enc + aud_enc + ["-shortest", video_path])
+            if _run("plain+ascii+voice", cmd1):
+                return video_path
+
+            # 전략 2: 단색 + 한국어 drawtext + 음성 (NanumGothic 있을 때)
+            if ko_vf:
+                cmd2 = (bg_in + ["-i", audio_path]
+                        + ["-vf", ko_vf]
+                        + vid_enc + aud_enc + ["-shortest", video_path])
+                if _run("plain+korean+voice", cmd2):
+                    return video_path
+
+            # 전략 3: 단색 + ASCII + 음성 + BGM (filter_complex 오디오만)
+            # geq 없이 drawtext+BGM 믹싱 → 메모리 효율적
+            fc3 = (
+                f"[0:v]{ascii_vf}[vout];"
                 f"[1:a]volume=1.0[voice];"
                 f"[2:a]volume=0.25[bgm];"
                 f"[voice][bgm]amix=inputs=2:duration=shortest[aout]"
             )
-            cmd = (bg_in
-                   + ["-i", audio_path]
-                   + ["-f", "lavfi", "-i", bgm_lavfi]
-                   + ["-filter_complex", fc]
-                   + ["-map", "[vout]", "-map", "[aout]"]
-                   + vid_enc + aud_enc + ["-shortest", video_path])
-            if _run("gradient+ascii+voice+bgm", cmd):
-                return video_path
-
-            # 전략 2: 그라데이션 + 한국어 + 음성 + BGM
-            if ko_vf:
-                fc2 = (
-                    f"[0:v]{gradient},{ko_vf}[vout];"
-                    f"[1:a]volume=1.0[voice];"
-                    f"[2:a]volume=0.25[bgm];"
-                    f"[voice][bgm]amix=inputs=2:duration=shortest[aout]"
-                )
-                cmd2 = (bg_in
-                        + ["-i", audio_path]
-                        + ["-f", "lavfi", "-i", bgm_lavfi]
-                        + ["-filter_complex", fc2]
-                        + ["-map", "[vout]", "-map", "[aout]"]
-                        + vid_enc + aud_enc + ["-shortest", video_path])
-                if _run("gradient+korean+voice+bgm", cmd2):
-                    return video_path
-
-            # 전략 3: 그라데이션 + ASCII + 음성 (BGM 없이)
-            cmd3 = (bg_in + ["-i", audio_path]
-                    + ["-vf", full_vf]
+            cmd3 = (bg_in
+                    + ["-i", audio_path]
+                    + ["-f", "lavfi", "-i", bgm_lavfi]
+                    + ["-filter_complex", fc3]
+                    + ["-map", "[vout]", "-map", "[aout]"]
                     + vid_enc + aud_enc + ["-shortest", video_path])
-            if _run("gradient+ascii+voice", cmd3):
+            if _run("plain+ascii+voice+bgm", cmd3, t=120):
                 return video_path
 
-            # 전략 4: 단색 + ASCII + 음성 (그라데이션도 없이)
+            # 전략 4: 음성만 (텍스트/BGM 모두 실패 시)
             cmd4 = (bg_in + ["-i", audio_path]
-                    + ["-vf", ascii_vf]
                     + vid_enc + aud_enc + ["-shortest", video_path])
-            if _run("plain+ascii+voice", cmd4):
+            if _run("plain+voice-only", cmd4):
                 return video_path
 
         # ── 무음 폴백 (40초) ─────────────────────────────────────────────────
-        cmd5 = (bg_in + ["-vf", f"{gradient},{ascii_vf}"]
+        cmd5 = (bg_in + ["-vf", ascii_vf]
                 + vid_enc + ["-t", "40", video_path])
-        if _run("gradient+ascii-noaudio", cmd5):
+        if _run("plain+ascii-noaudio", cmd5):
             return video_path
 
-        cmd6 = (bg_in + ["-vf", ascii_vf]
-                + vid_enc + ["-t", "40", video_path])
-        if _run("plain+ascii-noaudio", cmd6):
-            return video_path
-
-        cmd7 = bg_in + vid_enc + ["-t", "40", video_path]
-        if _run("plain-only", cmd7):
+        cmd6 = bg_in + vid_enc + ["-t", "40", video_path]
+        if _run("plain-only", cmd6):
             return video_path
 
         print("[ERROR] 모든 FFmpeg 전략 실패")
@@ -960,7 +940,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v8-elevenlabs-bgm",
+        "version":               "v9-stable-bgm",
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
         "anthropic_sdk_version": getattr(_am, "__version__", "unknown"),
