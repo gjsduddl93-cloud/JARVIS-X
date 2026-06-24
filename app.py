@@ -509,6 +509,319 @@ def create_simple_video(content_data):
         return None
 
 
+# ── Unsplash 이미지 다운로드 ──────────────────────────────────────────────────
+
+def _download_unsplash_images(keywords: list, count: int = 5) -> list:
+    """Unsplash API로 portrait 이미지 다운로드. 성공한 파일 경로 목록 반환."""
+    api_key = os.getenv("UNSPLASH_API_KEY", "").strip()
+    if not api_key:
+        print("[UNSPLASH] UNSPLASH_API_KEY 없음")
+        return []
+
+    query = " ".join(str(k) for k in keywords[:3]) if keywords else "technology AI future"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    print(f"[UNSPLASH] 검색: '{query}' ({count}개 요청)")
+
+    try:
+        resp = requests.get(
+            "https://api.unsplash.com/search/photos",
+            params={"query": query, "per_page": count + 3, "orientation": "portrait"},
+            headers={"Authorization": f"Client-ID {api_key}"},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            print(f"[UNSPLASH] HTTP {resp.status_code}: {resp.text[:200]}")
+            return []
+
+        photos = resp.json().get("results", [])
+        print(f"[UNSPLASH] 검색 결과: {len(photos)}개")
+
+        img_paths = []
+        for i, photo in enumerate(photos):
+            if len(img_paths) >= count:
+                break
+            img_url = (photo.get("urls", {}).get("regular") or
+                       photo.get("urls", {}).get("small", ""))
+            if not img_url:
+                continue
+            img_path = os.path.join(IMAGES_DIR, f"unsplash_{ts}_{i}.jpg")
+            try:
+                ir = requests.get(img_url, timeout=20, stream=True)
+                if ir.status_code == 200:
+                    with open(img_path, "wb") as f:
+                        for chunk in ir.iter_content(8192):
+                            f.write(chunk)
+                    size = os.path.getsize(img_path)
+                    if size > 5000:
+                        img_paths.append(img_path)
+                        print(f"[UNSPLASH] {len(img_paths)}번 이미지: {size//1024}KB")
+                    else:
+                        os.remove(img_path)
+            except Exception as e:
+                print(f"[UNSPLASH] 이미지 {i} 실패: {e}")
+
+        print(f"[UNSPLASH] 최종 {len(img_paths)}개 준비")
+        return img_paths
+    except Exception as e:
+        print(f"[UNSPLASH] 예외: {e}")
+        return []
+
+
+def _split_narration_subtitles(text: str, n_slides: int) -> list:
+    """영어 나레이션을 문장 단위로 분리해 슬라이드 수에 맞게 배정."""
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    sentences = [s.strip() for s in sentences if s.strip()]
+    if not sentences:
+        return [""] * n_slides
+    return [sentences[i % len(sentences)] for i in range(n_slides)]
+
+
+def create_viral_shorts(content_data: dict):
+    """
+    Unsplash 이미지 슬라이드쇼 + Ken Burns 효과 + 동적 자막 + TTS + BGM 쇼츠.
+    실패 시 create_simple_video()로 자동 폴백.
+    """
+    try:
+        ts        = datetime.now().strftime("%Y%m%d_%H%M%S")
+        video_path = os.path.join(VIDEOS_DIR, f"viral_{ts}.mp4")
+        log_path   = os.path.join(IMAGES_DIR,  f"ffmpeg_viral_{ts}.log")
+
+        # FFmpeg 존재 확인
+        try:
+            subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=10).check_returncode()
+        except Exception as e:
+            print(f"[VIRAL] ffmpeg 없음: {e}")
+            return create_simple_video(content_data)
+
+        # ── 콘텐츠 필드 추출 ─────────────────────────────────────────────────
+        title    = content_data.get("title", "JARVIS-X")
+        narration = content_data.get("narration", "")
+        title_en  = content_data.get("title_en", "") or _ascii_only(title) or "JARVIS-X"
+        narr_en   = content_data.get("narration_en", "") or _ascii_only(narration) or "AI Content"
+        keywords  = content_data.get("keywords", [title_en])
+
+        # ── 1. Unsplash 이미지 다운로드 ──────────────────────────────────────
+        img_paths = _download_unsplash_images(keywords, count=5)
+        if len(img_paths) < 2:
+            print("[VIRAL] 이미지 부족 → create_simple_video 폴백")
+            return create_simple_video(content_data)
+
+        n        = len(img_paths)   # 실제 이미지 수 (2~5)
+        IMG_DUR  = 5                # 이미지당 표시 시간 (초)
+        FADE_DUR = 0.5              # xfade 전환 시간 (초)
+
+        # ── 2. TTS 음성 생성 ─────────────────────────────────────────────────
+        audio_path = create_tts_audio(narration or title)
+        print(f"[VIRAL] TTS={'있음: '+audio_path if audio_path else '없음'}")
+
+        # ── 3. 자막 분할 ──────────────────────────────────────────────────────
+        subtitle_lines = _split_narration_subtitles(narr_en, n)
+
+        # ── 4. BGM (4화음 전자음악 드론) ──────────────────────────────────────
+        bgm_expr  = (
+            "0.12*sin(110*2*PI*t)*(0.6+0.4*sin(0.5*2*PI*t))"
+            "+0.08*sin(220*2*PI*t)+0.05*sin(330*2*PI*t)+0.03*sin(440*2*PI*t)"
+        )
+        bgm_lavfi = f"aevalsrc={bgm_expr}:s=44100:c=stereo"
+
+        # ── FFmpeg 공통 옵션 ──────────────────────────────────────────────────
+        vid_enc = ["-c:v", "libx264", "-preset", "ultrafast",
+                   "-crf", "28", "-pix_fmt", "yuv420p", "-threads", "1"]
+        aud_enc = ["-c:a", "aac", "-b:a", "128k"]
+
+        # 이미지 입력 인수 (-loop 1 = 정지 이미지를 동영상처럼 반복)
+        img_inputs = []
+        for ip in img_paths:
+            img_inputs += ["-loop", "1", "-t", str(IMG_DUR), "-i", ip]
+
+        # 오디오 스트림 인덱스 (이미지 n개 이후)
+        voice_idx = n       # 예: 5개 이미지면 인덱스 5
+        bgm_idx   = n + 1   # 인덱스 6
+
+        # ── Ken Burns 효과: scale 확대 후 crop으로 패닝 ──────────────────────
+        # zoompan 대신 scale+crop 사용 → Render free tier에서 안정적
+        def _ken_burns_vf(i: int) -> str:
+            # 5가지 패닝 방향 순환 (홀짝 이미지마다 다른 방향)
+            # (scale_w, scale_h, crop_x_expr, crop_y_expr)
+            # IMG_DUR=5 기준: 40px/s, 66px/s 등
+            pan = [
+                (1300, 1920, "t*40",       "0"),           # 좌→우 수평
+                (1080, 2250, "0",          "t*66"),        # 위→아래 수직
+                (1300, 1920, "max(220-t*44,0)", "0"),      # 우→좌 수평
+                (1080, 2250, "0",  "max(330-t*66,0)"),    # 아래→위 수직
+                (1300, 2250, "t*20",       "t*33"),        # 대각선
+            ]
+            sw, sh, px, py = pan[i % len(pan)]
+            return (
+                f"scale={sw}:{sh}:force_original_aspect_ratio=increase,"
+                f"crop={sw}:{sh},"
+                f"crop=1080:1920:{px}:{py},"
+                f"fps=24,setsar=1"
+            )
+
+        def _static_vf() -> str:
+            return "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24,setsar=1"
+
+        # xfade 오프셋: offset_k = (k+1) * (IMG_DUR - FADE_DUR)
+        def _xfade_offset(k: int) -> float:
+            return (k + 1) * (IMG_DUR - FADE_DUR)
+
+        def _build_fc(ken_burns: bool) -> str:
+            """filter_complex 전체 문자열 구성."""
+            parts = []
+
+            # 각 이미지에 Ken Burns or 정적 스케일 적용
+            for i in range(n):
+                vf = _ken_burns_vf(i) if ken_burns else _static_vf()
+                parts.append(f"[{i}:v]{vf}[v{i}]")
+
+            # xfade 전환 체인
+            if n == 1:
+                parts.append("[v0]null[vchain]")
+            elif n == 2:
+                off = _xfade_offset(0)
+                parts.append(
+                    f"[v0][v1]xfade=transition=fade:duration={FADE_DUR}:offset={off:.1f}[vchain]"
+                )
+            else:
+                off = _xfade_offset(0)
+                parts.append(
+                    f"[v0][v1]xfade=transition=fade:duration={FADE_DUR}:offset={off:.1f}[x01]"
+                )
+                prev = "x01"
+                for k in range(2, n):
+                    off = _xfade_offset(k - 1)
+                    nxt = "vchain" if k == n - 1 else f"x0{k}"
+                    parts.append(
+                        f"[{prev}][v{k}]xfade=transition=fade:duration={FADE_DUR}:offset={off:.1f}[{nxt}]"
+                    )
+                    prev = nxt
+
+            # 자막 오버레이 (하단 중앙 + 상단 제목)
+            sub_filters = []
+            safe_title = _ffmpeg_escape(_ascii_only(title_en[:40]))
+            # 상단 제목: 첫 3초만 표시
+            sub_filters.append(
+                f"drawtext=text='{safe_title}'"
+                f":fontsize=56:fontcolor=white:x=(w-text_w)/2:y=120"
+                f":enable='between(t,0,3)':box=1:boxcolor=black@0.7:boxborderw=12"
+            )
+            # 슬라이드별 하단 자막 (순차 등장)
+            for idx, line in enumerate(subtitle_lines):
+                t_start = idx * (IMG_DUR - FADE_DUR) + 1.0
+                t_end   = t_start + IMG_DUR - 1.5
+                safe_line = _ffmpeg_escape(_ascii_only(str(line))[:52])
+                sub_filters.append(
+                    f"drawtext=text='{safe_line}'"
+                    f":fontsize=44:fontcolor=white:x=(w-text_w)/2:y=h-180"
+                    f":enable='between(t,{t_start:.1f},{t_end:.1f})'"
+                    f":box=1:boxcolor=black@0.65:boxborderw=10"
+                )
+            parts.append(f"[vchain]{','.join(sub_filters)}[vout]")
+            return ";".join(parts)
+
+        def _try(label: str, cmd: list, t: int = 150) -> bool:
+            if os.path.exists(video_path):
+                os.remove(video_path)
+            print(f"[VIRAL] 전략: {label}")
+            _run_ffmpeg(cmd, log_path, timeout=t)
+            exists = os.path.exists(video_path)
+            size   = os.path.getsize(video_path) if exists else 0
+            ok     = exists and size > 2000
+            print(f"[VIRAL] {'✅ 성공' if ok else '❌ 실패'} ({label}): {size}B")
+            if not ok and exists:
+                os.remove(video_path)
+            return ok
+
+        # ── 전략 실행 ─────────────────────────────────────────────────────────
+
+        if audio_path and os.path.exists(audio_path):
+            # 전략 1: Ken Burns + xfade + 자막 + 음성 + BGM (풀 버전)
+            fc1 = (
+                _build_fc(ken_burns=True) + ";"
+                f"[{voice_idx}:a]volume=1.0[voice];"
+                f"[{bgm_idx}:a]volume=0.25[bgm];"
+                f"[voice][bgm]amix=inputs=2:duration=first[aout]"
+            )
+            cmd1 = (
+                img_inputs + ["-i", audio_path] +
+                ["-f", "lavfi", "-i", bgm_lavfi] +
+                ["-filter_complex", fc1] +
+                ["-map", "[vout]", "-map", "[aout]"] +
+                vid_enc + aud_enc + ["-t", "45", "-shortest", video_path]
+            )
+            if _try("kenburns+fade+sub+voice+bgm", cmd1, t=150):
+                return video_path
+
+            # 전략 2: Ken Burns + xfade + 자막 + 음성 (BGM 없음)
+            fc2 = (
+                _build_fc(ken_burns=True) + ";"
+                f"[{voice_idx}:a]volume=1.0[aout]"
+            )
+            cmd2 = (
+                img_inputs + ["-i", audio_path] +
+                ["-filter_complex", fc2] +
+                ["-map", "[vout]", "-map", "[aout]"] +
+                vid_enc + aud_enc + ["-t", "45", "-shortest", video_path]
+            )
+            if _try("kenburns+fade+sub+voice", cmd2, t=150):
+                return video_path
+
+            # 전략 3: 정적 스케일 + xfade + 자막 + 음성 (Ken Burns 제외)
+            fc3 = (
+                _build_fc(ken_burns=False) + ";"
+                f"[{voice_idx}:a]volume=1.0[aout]"
+            )
+            cmd3 = (
+                img_inputs + ["-i", audio_path] +
+                ["-filter_complex", fc3] +
+                ["-map", "[vout]", "-map", "[aout]"] +
+                vid_enc + aud_enc + ["-t", "45", "-shortest", video_path]
+            )
+            if _try("static+fade+sub+voice", cmd3, t=120):
+                return video_path
+
+            # 전략 4: concat (전환 없음) + 음성
+            sp  = [
+                f"[{i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[v{i}]"
+                for i in range(n)
+            ]
+            cin = "".join(f"[v{i}]" for i in range(n))
+            fc4 = (
+                ";".join(sp) + ";" +
+                f"{cin}concat=n={n}:v=1:a=0[vout];" +
+                f"[{voice_idx}:a]volume=1.0[aout]"
+            )
+            cmd4 = (
+                img_inputs + ["-i", audio_path] +
+                ["-filter_complex", fc4] +
+                ["-map", "[vout]", "-map", "[aout]"] +
+                vid_enc + aud_enc + ["-t", "45", "-shortest", video_path]
+            )
+            if _try("concat+voice", cmd4, t=90):
+                return video_path
+
+        # 전략 5: 무음 슬라이드쇼
+        fc5 = _build_fc(ken_burns=False)
+        total_dur = int(n * IMG_DUR - (n - 1) * FADE_DUR)
+        cmd5 = (
+            img_inputs +
+            ["-filter_complex", fc5] +
+            ["-map", "[vout]"] +
+            vid_enc + ["-t", str(total_dur), video_path]
+        )
+        if _try("static+fade+noaudio", cmd5, t=90):
+            return video_path
+
+        print("[VIRAL] 모든 슬라이드쇼 전략 실패 → create_simple_video 폴백")
+        return create_simple_video(content_data)
+
+    except Exception as e:
+        print(f"[ERROR] create_viral_shorts 예외: {e}")
+        print(traceback.format_exc())
+        return create_simple_video(content_data)
+
+
 # ── YouTube ──────────────────────────────────────────────────────────────────
 
 def get_youtube_service():
@@ -644,9 +957,13 @@ def video_package_json():
   "title_en": "English title for video overlay (max 40 chars, ASCII only)",
   "description": "YouTube 설명 (150자 이내, 핵심 키워드 포함)",
   "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
+  "keywords": ["english keyword1", "keyword2", "keyword3"],
   "narration": "30~45초 분량의 나레이션 (120~150자, 자연스럽고 몰입감 있는 한국어, 반드시 150자 이하)",
   "narration_en": "English narration summary for overlay (max 200 chars, ASCII only, 4-5 key sentences)"
 }
+
+keywords는 Unsplash 이미지 검색용 영어 키워드 2~3개 (예: ["AI technology", "money success", "future"])
+
 
 JSON 외에 다른 텍스트는 절대 포함하지 말것!
 """
@@ -686,9 +1003,9 @@ def _run_video_job(job_id: str) -> None:
         _append_log(job_id, f"✅ 콘텐츠 완료: {content_data.get('title')}")
         _update_job(job_id, content=content_data)
 
-        # Step 2: 음성 + 영상 생성
-        _append_log(job_id, "2️⃣ ElevenLabs/gTTS 음성 + FFmpeg 영상(BGM 포함) 생성 중...")
-        video_path = create_simple_video(content_data)
+        # Step 2: Unsplash 이미지 + 슬라이드쇼 영상 생성
+        _append_log(job_id, "2️⃣ Unsplash 이미지 수집 + Ken Burns 슬라이드쇼 영상 생성 중...")
+        video_path = create_viral_shorts(content_data)
         if not video_path:
             _append_log(job_id, "❌ 영상 생성 실패 (ffmpeg 확인 필요)")
             _update_job(job_id, status="error",
@@ -940,7 +1257,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v10-45s-cap",
+        "version":               "v11-viral-shorts",
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
         "anthropic_sdk_version": getattr(_am, "__version__", "unknown"),
