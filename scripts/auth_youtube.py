@@ -52,14 +52,18 @@ def main():
         sys.exit(1)
 
     print("[*] YouTube OAuth 인증을 시작합니다...")
-    print("    잠시 후 브라우저가 열립니다. Google 계정으로 로그인 후 권한을 허용하세요.")
+    print()
+    print("    !! 중요: 브라우저에서 반드시 'future.minute' 채널 계정으로 로그인하세요 !!")
+    print("    !! 다른 계정이 자동 선택되면 '다른 계정 사용'을 클릭하세요              !!")
+    print()
+    print("    잠시 후 브라우저가 열립니다.")
     print()
 
     flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET, SCOPES)
     creds = flow.run_local_server(
         port=0,
-        access_type="offline",       # refresh token 발급 (자동 갱신 필수)
-        prompt="consent"             # 항상 consent 화면 표시 (refresh token 보장)
+        access_type="offline",
+        prompt="select_account consent",  # 항상 계정 선택 화면 먼저 표시
     )
 
     # 토큰 저장
@@ -69,6 +73,32 @@ def main():
 
     print(f"[OK] 인증 완료! '{TOKEN_FILE}' 저장됨")
     print()
+
+    # 어떤 채널에 연결됐는지 즉시 확인
+    print("=== 연결된 YouTube 채널 확인 ===")
+    try:
+        from google.auth.transport.requests import Request as GRequest
+        from googleapiclient.discovery import build as yt_build
+
+        creds.refresh(GRequest())   # 최신 토큰 확보
+        svc = yt_build("youtube", "v3", credentials=creds)
+        ch = svc.channels().list(part="snippet,statistics", mine=True).execute()
+        for item in ch.get("items", []):
+            s  = item["snippet"]
+            st = item.get("statistics", {})
+            print(f"  채널명   : {s['title']}")
+            print(f"  채널ID   : {item['id']}")
+            print(f"  URL      : https://www.youtube.com/channel/{item['id']}")
+            print(f"  구독자   : {st.get('subscriberCount', 'N/A')}")
+            print(f"  영상 수  : {st.get('videoCount', 'N/A')}")
+            print(f"  커스텀URL: {s.get('customUrl', '없음')}")
+        print()
+        print("[!] 위 채널이 업로드 대상입니다. 올바른 채널인지 확인하세요!")
+        print("[!] 잘못된 채널이면 Ctrl+C 로 중단하고 올바른 계정으로 다시 실행하세요.")
+    except Exception as e:
+        print(f"  채널 확인 실패: {e}")
+    print()
+
     print("-" * 60)
     print("다음 단계: Render 환경변수에 토큰 추가")
     print("-" * 60)

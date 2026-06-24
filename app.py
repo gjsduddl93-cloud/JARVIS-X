@@ -833,13 +833,29 @@ def test_youtube():
             result["auth_error"] = err
             return jsonify(result), 200
 
-        ch = svc.channels().list(part="snippet", mine=True).execute()
+        ch = svc.channels().list(
+            part="snippet,statistics", mine=True).execute()
         items = ch.get("items", [])
         if items:
-            result["channel_name"] = items[0]["snippet"]["title"]
-            result["channel_id"]   = items[0]["id"]
+            item = items[0]
+            snip = item["snippet"]
+            stat = item.get("statistics", {})
+            result["channel_name"]        = snip["title"]
+            result["channel_id"]          = item["id"]
+            result["channel_url"]         = f"https://www.youtube.com/channel/{item['id']}"
+            result["channel_custom_url"]  = snip.get("customUrl", "")
+            result["channel_subscribers"] = stat.get("subscriberCount", "N/A")
+            result["channel_video_count"] = stat.get("videoCount", "N/A")
+            result["upload_target"]       = (
+                f"{snip['title']} "
+                f"({snip.get('customUrl', item['id'])})"
+            )
             result["status"]  = "ok"
-            result["message"] = "YouTube API 연결 정상 — 업로드 준비 완료"
+            result["message"] = (
+                f"YouTube API 연결 정상 — 업로드 대상: {snip['title']} 채널"
+            )
+            print(f"[TEST-YT] 연결 채널: {snip['title']} / {item['id']} "
+                  f"/ {snip.get('customUrl','')}")
         else:
             result["status"]  = "warning"
             result["message"] = "API 연결 성공이나 채널 정보 없음 (권한 확인)"
