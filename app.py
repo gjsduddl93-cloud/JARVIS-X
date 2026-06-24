@@ -578,15 +578,15 @@ def _split_narration_subtitles(text: str, n_slides: int) -> list:
 
 def create_viral_shorts(content_data: dict):
     """
-    Unsplash 이미지 슬라이드쇼 + Ken Burns 효과 + 동적 자막 + TTS + BGM 쇼츠.
+    Unsplash 이미지 슬라이드쇼 + 동적 자막 + TTS + BGM 쇼츠.
+    concat demuxer 방식 사용 (filter_complex xfade보다 안정적).
     실패 시 create_simple_video()로 자동 폴백.
     """
     try:
-        ts        = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ts         = datetime.now().strftime("%Y%m%d_%H%M%S")
         video_path = os.path.join(VIDEOS_DIR, f"viral_{ts}.mp4")
         log_path   = os.path.join(IMAGES_DIR,  f"ffmpeg_viral_{ts}.log")
 
-        # FFmpeg 존재 확인
         try:
             subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=10).check_returncode()
         except Exception as e:
@@ -594,7 +594,7 @@ def create_viral_shorts(content_data: dict):
             return create_simple_video(content_data)
 
         # ── 콘텐츠 필드 추출 ─────────────────────────────────────────────────
-        title    = content_data.get("title", "JARVIS-X")
+        title     = content_data.get("title", "JARVIS-X")
         narration = content_data.get("narration", "")
         title_en  = content_data.get("title_en", "") or _ascii_only(title) or "JARVIS-X"
         narr_en   = content_data.get("narration_en", "") or _ascii_only(narration) or "AI Content"
@@ -606,9 +606,8 @@ def create_viral_shorts(content_data: dict):
             print("[VIRAL] 이미지 부족 → create_simple_video 폴백")
             return create_simple_video(content_data)
 
-        n        = len(img_paths)   # 실제 이미지 수 (2~5)
-        IMG_DUR  = 5                # 이미지당 표시 시간 (초)
-        FADE_DUR = 0.5              # xfade 전환 시간 (초)
+        n       = len(img_paths)
+        IMG_DUR = 5   # 이미지당 표시 시간 (초)
 
         # ── 2. TTS 음성 생성 ─────────────────────────────────────────────────
         audio_path = create_tts_audio(narration or title)
@@ -617,117 +616,55 @@ def create_viral_shorts(content_data: dict):
         # ── 3. 자막 분할 ──────────────────────────────────────────────────────
         subtitle_lines = _split_narration_subtitles(narr_en, n)
 
-        # ── 4. BGM (4화음 전자음악 드론) ──────────────────────────────────────
+        # ── 4. BGM ────────────────────────────────────────────────────────────
         bgm_expr  = (
             "0.12*sin(110*2*PI*t)*(0.6+0.4*sin(0.5*2*PI*t))"
             "+0.08*sin(220*2*PI*t)+0.05*sin(330*2*PI*t)+0.03*sin(440*2*PI*t)"
         )
         bgm_lavfi = f"aevalsrc={bgm_expr}:s=44100:c=stereo"
 
-        # ── FFmpeg 공통 옵션 ──────────────────────────────────────────────────
         vid_enc = ["-c:v", "libx264", "-preset", "ultrafast",
                    "-crf", "28", "-pix_fmt", "yuv420p", "-threads", "1"]
         aud_enc = ["-c:a", "aac", "-b:a", "128k"]
 
-        # 이미지 입력 인수
-        # -r 24: 프레임레이트 고정 (xfade 호환)
-        # -loop 1: 정지 이미지를 동영상처럼 반복
-        img_inputs = []
-        for ip in img_paths:
-            img_inputs += ["-r", "24", "-loop", "1", "-t", str(IMG_DUR), "-i", ip]
+        # ── 5. concat 파일 리스트 생성 ───────────────────────────────────────
+        # concat demuxer: filter_complex+xfade보다 훨씬 안정적
+        concat_txt = os.path.join(IMAGES_DIR, f"concat_{ts}.txt")
+        with open(concat_txt, "w") as f:
+            for ip in img_paths:
+                f.write(f"file '{os.path.abspath(ip)}'\n")
+                f.write(f"duration {IMG_DUR}\n")
+            # 마지막 이미지 재사용 (last frame 보장)
+            f.write(f"file '{os.path.abspath(img_paths[-1])}'\n")
 
-        # 오디오 스트림 인덱스 (이미지 n개 이후)
-        voice_idx = n       # 예: 5개 이미지면 인덱스 5
-        bgm_idx   = n + 1   # 인덱스 6
-
-        # ── Ken Burns 효과: scale 확대 후 crop으로 패닝 ──────────────────────
-        # zoompan 대신 scale+crop 사용 → Render free tier에서 안정적
-        def _ken_burns_vf(i: int) -> str:
-            # 5가지 패닝 방향 순환 (홀짝 이미지마다 다른 방향)
-            # setpts=PTS-STARTPTS: 타임스탬프 0으로 리셋 → xfade 필수 조건
-            # format=yuv420p: 픽셀 포맷 통일 → xfade 포맷 불일치 방지
-            pan = [
-                (1300, 1920, "t*40",            "0"),      # 좌→우 수평
-                (1080, 2250, "0",               "t*66"),   # 위→아래 수직
-                (1300, 1920, "max(220-t*44,0)", "0"),      # 우→좌 수평
-                (1080, 2250, "0",   "max(330-t*66,0)"),   # 아래→위 수직
-                (1300, 2250, "t*20",            "t*33"),   # 대각선
-            ]
-            sw, sh, px, py = pan[i % len(pan)]
-            return (
-                f"setpts=PTS-STARTPTS,"
-                f"scale={sw}:{sh}:force_original_aspect_ratio=increase,"
-                f"crop={sw}:{sh},"
-                f"crop=1080:1920:{px}:{py},"
-                f"format=yuv420p,fps=24,setsar=1"
+        # ── 6. 자막 VF 구성 ──────────────────────────────────────────────────
+        # concat 타임라인: img0=0~5s, img1=5~10s, img2=10~15s ...
+        sub_parts = []
+        safe_title = _ffmpeg_escape(_ascii_only(title_en[:40]))
+        sub_parts.append(
+            f"drawtext=text='{safe_title}'"
+            f":fontsize=56:fontcolor=white:x=(w-text_w)/2:y=120"
+            f":enable='between(t,0,3)':box=1:boxcolor=black@0.7:boxborderw=12"
+        )
+        for idx, line in enumerate(subtitle_lines):
+            t_s = idx * IMG_DUR + 1.0
+            t_e = t_s + IMG_DUR - 1.5
+            safe_line = _ffmpeg_escape(_ascii_only(str(line))[:52])
+            sub_parts.append(
+                f"drawtext=text='{safe_line}'"
+                f":fontsize=44:fontcolor=white:x=(w-text_w)/2:y=h-180"
+                f":enable='between(t,{t_s:.1f},{t_e:.1f})'"
+                f":box=1:boxcolor=black@0.65:boxborderw=10"
             )
 
-        def _static_vf() -> str:
-            return (
-                "setpts=PTS-STARTPTS,"
-                "scale=1080:1920:force_original_aspect_ratio=increase,"
-                "crop=1080:1920,format=yuv420p,fps=24,setsar=1"
-            )
+        base_vf = ("scale=1080:1920:force_original_aspect_ratio=increase,"
+                   "crop=1080:1920,format=yuv420p")
+        sub_vf  = base_vf + "," + ",".join(sub_parts)
 
-        # xfade 오프셋: offset_k = (k+1) * (IMG_DUR - FADE_DUR)
-        def _xfade_offset(k: int) -> float:
-            return (k + 1) * (IMG_DUR - FADE_DUR)
+        # concat demuxer 입력 (input 0)
+        concat_in = ["-f", "concat", "-safe", "0", "-i", concat_txt]
 
-        def _build_fc(ken_burns: bool) -> str:
-            """filter_complex 전체 문자열 구성."""
-            parts = []
-
-            # 각 이미지에 Ken Burns or 정적 스케일 적용
-            for i in range(n):
-                vf = _ken_burns_vf(i) if ken_burns else _static_vf()
-                parts.append(f"[{i}:v]{vf}[v{i}]")
-
-            # xfade 전환 체인
-            if n == 1:
-                parts.append("[v0]null[vchain]")
-            elif n == 2:
-                off = _xfade_offset(0)
-                parts.append(
-                    f"[v0][v1]xfade=transition=fade:duration={FADE_DUR}:offset={off:.1f}[vchain]"
-                )
-            else:
-                off = _xfade_offset(0)
-                parts.append(
-                    f"[v0][v1]xfade=transition=fade:duration={FADE_DUR}:offset={off:.1f}[x01]"
-                )
-                prev = "x01"
-                for k in range(2, n):
-                    off = _xfade_offset(k - 1)
-                    nxt = "vchain" if k == n - 1 else f"x0{k}"
-                    parts.append(
-                        f"[{prev}][v{k}]xfade=transition=fade:duration={FADE_DUR}:offset={off:.1f}[{nxt}]"
-                    )
-                    prev = nxt
-
-            # 자막 오버레이 (하단 중앙 + 상단 제목)
-            sub_filters = []
-            safe_title = _ffmpeg_escape(_ascii_only(title_en[:40]))
-            # 상단 제목: 첫 3초만 표시
-            sub_filters.append(
-                f"drawtext=text='{safe_title}'"
-                f":fontsize=56:fontcolor=white:x=(w-text_w)/2:y=120"
-                f":enable='between(t,0,3)':box=1:boxcolor=black@0.7:boxborderw=12"
-            )
-            # 슬라이드별 하단 자막 (순차 등장)
-            for idx, line in enumerate(subtitle_lines):
-                t_start = idx * (IMG_DUR - FADE_DUR) + 1.0
-                t_end   = t_start + IMG_DUR - 1.5
-                safe_line = _ffmpeg_escape(_ascii_only(str(line))[:52])
-                sub_filters.append(
-                    f"drawtext=text='{safe_line}'"
-                    f":fontsize=44:fontcolor=white:x=(w-text_w)/2:y=h-180"
-                    f":enable='between(t,{t_start:.1f},{t_end:.1f})'"
-                    f":box=1:boxcolor=black@0.65:boxborderw=10"
-                )
-            parts.append(f"[vchain]{','.join(sub_filters)}[vout]")
-            return ";".join(parts)
-
-        def _try(label: str, cmd: list, t: int = 150) -> bool:
+        def _try(label, cmd, t=120):
             if os.path.exists(video_path):
                 os.remove(video_path)
             print(f"[VIRAL] 전략: {label}")
@@ -743,81 +680,51 @@ def create_viral_shorts(content_data: dict):
         # ── 전략 실행 ─────────────────────────────────────────────────────────
 
         if audio_path and os.path.exists(audio_path):
-            # 전략 1: Ken Burns + xfade + 자막 + 음성 + BGM (풀 버전)
+            # 전략 1: 슬라이드쇼 + 자막 + 음성 + BGM
             fc1 = (
-                _build_fc(ken_burns=True) + ";"
-                f"[{voice_idx}:a]volume=1.0[voice];"
-                f"[{bgm_idx}:a]volume=0.25[bgm];"
-                f"[voice][bgm]amix=inputs=2:duration=first[aout]"
+                "[1:a]volume=1.0[voice];"
+                "[2:a]volume=0.25[bgm];"
+                "[voice][bgm]amix=inputs=2:duration=first[aout]"
             )
             cmd1 = (
-                img_inputs + ["-i", audio_path] +
+                concat_in + ["-i", audio_path] +
                 ["-f", "lavfi", "-i", bgm_lavfi] +
                 ["-filter_complex", fc1] +
-                ["-map", "[vout]", "-map", "[aout]"] +
+                ["-vf", sub_vf] +
+                ["-map", "0:v", "-map", "[aout]"] +
                 vid_enc + aud_enc + ["-t", "45", "-shortest", video_path]
             )
-            if _try("kenburns+fade+sub+voice+bgm", cmd1, t=150):
+            if _try("concat+sub+voice+bgm", cmd1):
                 return video_path
 
-            # 전략 2: Ken Burns + xfade + 자막 + 음성 (BGM 없음)
-            fc2 = (
-                _build_fc(ken_burns=True) + ";"
-                f"[{voice_idx}:a]volume=1.0[aout]"
-            )
+            # 전략 2: 슬라이드쇼 + 자막 + 음성 (BGM 없음)
             cmd2 = (
-                img_inputs + ["-i", audio_path] +
-                ["-filter_complex", fc2] +
-                ["-map", "[vout]", "-map", "[aout]"] +
+                concat_in + ["-i", audio_path] +
+                ["-vf", sub_vf] +
+                ["-map", "0:v", "-map", "1:a"] +
                 vid_enc + aud_enc + ["-t", "45", "-shortest", video_path]
             )
-            if _try("kenburns+fade+sub+voice", cmd2, t=150):
+            if _try("concat+sub+voice", cmd2):
                 return video_path
 
-            # 전략 3: 정적 스케일 + xfade + 자막 + 음성 (Ken Burns 제외)
-            fc3 = (
-                _build_fc(ken_burns=False) + ";"
-                f"[{voice_idx}:a]volume=1.0[aout]"
-            )
+            # 전략 3: 슬라이드쇼 + 음성 (자막 없음)
             cmd3 = (
-                img_inputs + ["-i", audio_path] +
-                ["-filter_complex", fc3] +
-                ["-map", "[vout]", "-map", "[aout]"] +
+                concat_in + ["-i", audio_path] +
+                ["-vf", base_vf] +
+                ["-map", "0:v", "-map", "1:a"] +
                 vid_enc + aud_enc + ["-t", "45", "-shortest", video_path]
             )
-            if _try("static+fade+sub+voice", cmd3, t=120):
+            if _try("concat+voice", cmd3):
                 return video_path
 
-            # 전략 4: concat (전환 없음) + 음성
-            sp  = [
-                f"[{i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[v{i}]"
-                for i in range(n)
-            ]
-            cin = "".join(f"[v{i}]" for i in range(n))
-            fc4 = (
-                ";".join(sp) + ";" +
-                f"{cin}concat=n={n}:v=1:a=0[vout];" +
-                f"[{voice_idx}:a]volume=1.0[aout]"
-            )
-            cmd4 = (
-                img_inputs + ["-i", audio_path] +
-                ["-filter_complex", fc4] +
-                ["-map", "[vout]", "-map", "[aout]"] +
-                vid_enc + aud_enc + ["-t", "45", "-shortest", video_path]
-            )
-            if _try("concat+voice", cmd4, t=90):
-                return video_path
-
-        # 전략 5: 무음 슬라이드쇼
-        fc5 = _build_fc(ken_burns=False)
-        total_dur = int(n * IMG_DUR - (n - 1) * FADE_DUR)
-        cmd5 = (
-            img_inputs +
-            ["-filter_complex", fc5] +
-            ["-map", "[vout]"] +
-            vid_enc + ["-t", str(total_dur), video_path]
+        # 전략 4: 무음 슬라이드쇼
+        cmd4 = (
+            concat_in +
+            ["-vf", base_vf] +
+            ["-map", "0:v"] +
+            vid_enc + ["-t", str(n * IMG_DUR), video_path]
         )
-        if _try("static+fade+noaudio", cmd5, t=90):
+        if _try("concat-only", cmd4):
             return video_path
 
         print("[VIRAL] 모든 슬라이드쇼 전략 실패 → create_simple_video 폴백")
@@ -1264,7 +1171,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v13-xfade-fix",
+        "version":               "v14-concat-demuxer",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
