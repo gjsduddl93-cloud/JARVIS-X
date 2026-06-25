@@ -359,15 +359,16 @@ def create_tts_audio(text: str, lang: str = "ko") -> str | None:
     el_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
     if el_key:
         try:
-            voice_id = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+            # EXAVITQu4vr4xnSDxMaL = Sarah (자연스러운 다국어, 한국어 발음 우수)
+            voice_id = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
             url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
             payload = {
                 "text": narr,
                 "model_id": "eleven_multilingual_v2",
                 "voice_settings": {
-                    "stability": 0.5,
-                    "similarity_boost": 0.75,
-                    "style": 0.0,
+                    "stability": 0.60,
+                    "similarity_boost": 0.80,
+                    "style": 0.30,
                     "use_speaker_boost": True,
                 },
             }
@@ -648,15 +649,30 @@ def create_viral_shorts(content_data: dict):
                    "-crf", "28", "-pix_fmt", "yuv420p", "-threads", "1"]
         aud_enc = ["-c:a", "aac", "-b:a", "128k"]
 
-        # ── 5. concat 파일 리스트 생성 ───────────────────────────────────────
-        # concat demuxer: filter_complex+xfade보다 훨씬 안정적
-        concat_txt = os.path.join(IMAGES_DIR, f"concat_{ts}.txt")
+        # ── 5. Pexels 클립 준비 (PEXELS_API_KEY 있으면) ─────────────────────
+        pexels_clips = _fetch_pexels_clips(keywords, clip_sec=IMG_DUR, max_clips=2)
+        print(f"[VIRAL] Pexels 클립: {len(pexels_clips)}개")
+
+        # ── 5b. concat 파일 리스트 생성 (이미지 + Pexels 클립 혼합) ─────────
+        # 전체 슬라이드 리스트: 이미지 3장마다 Pexels 클립 1개 삽입
+        concat_txt  = os.path.join(IMAGES_DIR, f"concat_{ts}.txt")
+        slide_items = []  # (path, is_video)
+        clip_q      = list(pexels_clips)
+        for i, ip in enumerate(img_paths):
+            slide_items.append((os.path.abspath(ip), False))
+            if clip_q and (i + 1) % 3 == 0:
+                slide_items.append((os.path.abspath(clip_q.pop(0)), True))
+        n = len(slide_items)  # 자막 수 재계산
+
         with open(concat_txt, "w") as f:
-            for ip in img_paths:
-                f.write(f"file '{os.path.abspath(ip)}'\n")
-                f.write(f"duration {IMG_DUR}\n")
-            # 마지막 이미지 재사용 (last frame 보장)
-            f.write(f"file '{os.path.abspath(img_paths[-1])}'\n")
+            for path, is_video in slide_items:
+                f.write(f"file '{path}'\n")
+                if not is_video:
+                    f.write(f"duration {IMG_DUR}\n")
+            # last-frame 보장 (마지막 이미지 재사용)
+            last_img = next((p for p, v in reversed(slide_items) if not v), None)
+            if last_img:
+                f.write(f"file '{last_img}'\n")
 
         # ── 6. 자막 VF 구성 ──────────────────────────────────────────────────
         sub_parts = []
@@ -1432,6 +1448,87 @@ def get_pexels_videos(keyword: str, count: int = 5) -> list:
     return []
 
 
+def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 2) -> list:
+    """
+    Pexels에서 영상 URL 가져와 clip_sec짜리 세로(1080×1920) 클립으로 전처리.
+    PEXELS_API_KEY 없으면 빈 리스트 반환 (이미지 전용 모드로 폴백).
+    """
+    api_key = os.getenv("PEXELS_API_KEY", "").strip()
+    if not api_key:
+        return []
+
+    query = " ".join(str(k) for k in keywords[:2]) if keywords else "technology"
+    ts    = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    clips = []
+
+    try:
+        resp = requests.get(
+            "https://api.pexels.com/videos/search",
+            headers={"Authorization": api_key},
+            params={"query": query, "per_page": max_clips + 2, "orientation": "portrait"},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            logger.warning(f"[PEXELS] HTTP {resp.status_code}")
+            return []
+
+        for idx, v in enumerate(resp.json().get("videos", [])):
+            if len(clips) >= max_clips:
+                break
+            files = v.get("video_files", [])
+            # SD 화질 우선 (용량 작고 빠름)
+            target = next((f for f in files if f.get("quality") == "sd"), files[0] if files else None)
+            if not target:
+                continue
+
+            video_url = target["link"]
+            raw_path  = os.path.join(IMAGES_DIR, f"pexels_raw_{ts}_{idx}.mp4")
+            clip_path = os.path.join(IMAGES_DIR, f"pexels_clip_{ts}_{idx}.mp4")
+
+            # 원본 다운로드
+            try:
+                dl = requests.get(video_url, timeout=30, stream=True)
+                if dl.status_code != 200:
+                    continue
+                with open(raw_path, "wb") as f:
+                    for chunk in dl.iter_content(65536):
+                        f.write(chunk)
+                if os.path.getsize(raw_path) < 10000:
+                    continue
+            except Exception as e:
+                logger.warning(f"[PEXELS] 다운로드 실패: {e}")
+                continue
+
+            # 전처리: clip_sec 자르기 + 세로 1080×1920 스케일 + 오디오 제거
+            cmd = [
+                "ffmpeg", "-y", "-ss", "0", "-i", raw_path,
+                "-t", str(clip_sec),
+                "-vf", (
+                    f"scale=1620:2880:force_original_aspect_ratio=increase,"
+                    f"crop=1080:1920,format=yuv420p"
+                ),
+                "-an",                         # 오디오 제거 (TTS가 대신함)
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
+                "-threads", "1",
+                clip_path,
+            ]
+            log_p = os.path.join(IMAGES_DIR, f"pexels_clip_{ts}_{idx}.log")
+            _run_ffmpeg(cmd, log_p, timeout=60)
+
+            if os.path.exists(clip_path) and os.path.getsize(clip_path) > 5000:
+                clips.append(clip_path)
+                logger.info(f"[PEXELS] 클립 준비: {clip_path}")
+            try:
+                os.remove(raw_path)
+            except Exception:
+                pass
+
+    except Exception as e:
+        logger.error(f"[PEXELS] 클립 준비 실패: {e}")
+
+    return clips
+
+
 @app.route("/start-video", methods=["POST"])
 def start_video():
     """영상 제작 백그라운드 작업 시작 → 즉시 job_id 반환"""
@@ -1605,7 +1702,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v20-trending-topics-daily",
+        "version":               "v22-voice-pexels-video",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
