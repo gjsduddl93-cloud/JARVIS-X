@@ -254,24 +254,34 @@ def _find_font():
 def _build_drawtext_vf(font_path, title, narration):
     """fontfile 지정 drawtext VF (한국어 지원, 순차 등장)."""
     fp = font_path.replace("\\", "/")
+    # 제목: 상단 굵은 흰색 + 아웃라인
     parts = [
         f"drawtext=fontfile='{fp}'"
-        f":text='{_ffmpeg_escape(title[:35])}'"
-        f":fontsize=72:fontcolor=white"
-        f":x=(w-text_w)/2:y=280"
-        f":box=1:boxcolor=black@0.6:boxborderw=12",
+        f":text='{_ffmpeg_escape(title[:20])}'"
+        f":fontsize=62:fontcolor=white"
+        f":x=(w-text_w)/2:y=120"
+        f":enable='between(t,0,4.5)'"
+        f":borderw=5:bordercolor=black@0.95"
+        f":shadowx=4:shadowy=4:shadowcolor=black@0.55",
+        # 채널 워터마크
+        f"drawtext=fontfile='{fp}'"
+        ":text='@future.minute'"
+        ":fontsize=30:fontcolor=white@0.75"
+        ":x=w-text_w-35:y=h-90"
+        ":borderw=2:bordercolor=black@0.7",
     ]
-    lines = [narration[i:i+22] for i in range(0, min(len(narration), 110), 22)]
-    start_times = [1.5, 5.0, 9.0, 14.0, 20.0]
+    lines = [narration[i:i+18] for i in range(0, min(len(narration), 90), 18)]
+    start_times = [0.5, 5.0, 9.5, 14.5, 20.0]
     for idx, line in enumerate(lines):
-        t = start_times[idx] if idx < len(start_times) else 1.5 + idx * 4.5
+        t = start_times[idx] if idx < len(start_times) else 0.5 + idx * 5.0
         parts.append(
             f"drawtext=fontfile='{fp}'"
             f":text='{_ffmpeg_escape(line)}'"
-            f":fontsize=44:fontcolor=0xccddff"
-            f":x=(w-text_w)/2:y={430 + idx * 85}"
+            f":fontsize=52:fontcolor=white"
+            f":x=(w-text_w)/2:y=h-260"
             f":enable='gte(t,{t})'"
-            f":box=1:boxcolor=black@0.4:boxborderw=8"
+            f":borderw=5:bordercolor=black@0.95"
+            f":shadowx=4:shadowy=4:shadowcolor=black@0.5"
         )
     return ",".join(parts)
 
@@ -280,22 +290,32 @@ def _build_ascii_drawtext_vf(title, narration):
     """FFmpeg 내장 폰트 drawtext (ASCII 전용, 순차 등장, 30~45초 영상용)."""
     atitle = _ascii_only(title) or "JARVIS-X"
     anarr  = _ascii_only(narration) or "AI Generated Content"
-    parts  = [
-        f"drawtext=text='{_ffmpeg_escape(atitle[:40])}'"
-        f":fontsize=68:fontcolor=white"
-        f":x=(w-text_w)/2:y=260"
-        f":box=1:boxcolor=black@0.6:boxborderw=12",
+    # 제목: 상단 굵은 흰색 + 아웃라인
+    parts = [
+        f"drawtext=text='{_ffmpeg_escape(atitle[:32])}'"
+        f":fontsize=62:fontcolor=white"
+        f":x=(w-text_w)/2:y=120"
+        f":enable='between(t,0,4.5)'"
+        f":borderw=5:bordercolor=black@0.95"
+        f":shadowx=4:shadowy=4:shadowcolor=black@0.55",
+        # 채널 워터마크
+        "drawtext=text='@future.minute'"
+        ":fontsize=30:fontcolor=white@0.75"
+        ":x=w-text_w-35:y=h-90"
+        ":borderw=2:bordercolor=black@0.7",
     ]
-    lines = [anarr[i:i+40] for i in range(0, min(len(anarr), 200), 40)]
-    start_times = [1.5, 5.0, 9.0, 14.0, 20.0]
+    # 나레이션: 안전구역 하단, 순차 등장
+    lines = [anarr[i:i+36] for i in range(0, min(len(anarr), 200), 36)]
+    start_times = [0.5, 5.0, 9.5, 14.5, 20.0]
     for idx, line in enumerate(lines):
-        t = start_times[idx] if idx < len(start_times) else 1.5 + idx * 4.5
+        t = start_times[idx] if idx < len(start_times) else 0.5 + idx * 5.0
         parts.append(
             f"drawtext=text='{_ffmpeg_escape(line)}'"
-            f":fontsize=44:fontcolor=0xccddff"
-            f":x=(w-text_w)/2:y={430 + idx * 85}"
+            f":fontsize=52:fontcolor=white"
+            f":x=(w-text_w)/2:y=h-260"
             f":enable='gte(t,{t})'"
-            f":box=1:boxcolor=black@0.4:boxborderw=8"
+            f":borderw=5:bordercolor=black@0.95"
+            f":shadowx=4:shadowy=4:shadowcolor=black@0.5"
         )
     return ",".join(parts)
 
@@ -639,19 +659,42 @@ def create_viral_shorts(content_data: dict):
             f.write(f"file '{os.path.abspath(img_paths[-1])}'\n")
 
         # ── 6. 자막 VF 구성 ──────────────────────────────────────────────────
-        # 아래쪽 1줄 고정: fontsize=32, 흰색, 검은박스 80%
         sub_parts = []
+
+        # 상단 제목 (첫 4.5초): 굵은 흰색 + 검은 아웃라인 — 훅 역할
+        safe_title = _ffmpeg_escape(_ascii_only(title_en[:32]))
+        if safe_title:
+            sub_parts.append(
+                f"drawtext=text='{safe_title}'"
+                f":fontsize=62:fontcolor=white"
+                f":x=(w-text_w)/2:y=120"
+                f":enable='between(t,0,4.5)'"
+                f":borderw=5:bordercolor=black@0.95"
+                f":shadowx=4:shadowy=4:shadowcolor=black@0.55"
+            )
+
+        # 채널 워터마크 (항상, 우하단 안전구역)
+        sub_parts.append(
+            "drawtext=text='@future.minute'"
+            ":fontsize=30:fontcolor=white@0.75"
+            ":x=w-text_w-35:y=h-90"
+            ":borderw=2:bordercolor=black@0.7"
+        )
+
+        # 나레이션 자막 (이미지별, 안전구역 y=h-260)
         for idx, line in enumerate(subtitle_lines):
-            t_s = idx * IMG_DUR + 1.0
-            t_e = t_s + IMG_DUR - 1.5
-            safe_line = _ffmpeg_escape(_ascii_only(str(line))[:52])
+            t_s = idx * IMG_DUR + 0.5
+            t_e = t_s + IMG_DUR - 1.0
+            safe_line = _ffmpeg_escape(_ascii_only(str(line))[:36])
             sub_parts.append(
                 f"drawtext=text='{safe_line}'"
-                f":fontsize=32:fontcolor=white:x=(w-text_w)/2:y=h-40"
+                f":fontsize=52:fontcolor=white"
+                f":x=(w-text_w)/2:y=h-260"
                 f":enable='between(t,{t_s:.1f},{t_e:.1f})'"
-                f":box=1:boxcolor=black@0.8:boxborderw=10"
+                f":borderw=5:bordercolor=black@0.95"
+                f":shadowx=4:shadowy=4:shadowcolor=black@0.5"
             )
-        print(f"[VIRAL] 자막 {len(subtitle_lines)}줄 (아래쪽 1줄 고정)")
+        print(f"[VIRAL] 자막 {len(subtitle_lines)}줄 (y=h-260, 52px 아웃라인)")
 
         # Ken Burns: 1.5배 확대 후 이미지별 팬 방향 랜덤 (mod로 이미지당 0~1 진행)
         # scale 1080*1.5=1620, 1920*1.5=2880 → 여유공간 540(x), 960(y)
@@ -1437,7 +1480,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v18-subtitle-trend-multilang",
+        "version":               "v19-visual-outline-watermark",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
