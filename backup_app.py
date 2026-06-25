@@ -1704,6 +1704,8 @@ def debug():
     return jsonify({
         "version":               "v22-voice-pexels-video",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
+        "pexels_key_set":        bool(os.getenv("PEXELS_API_KEY")),
+        "elevenlabs_key_set":    bool(os.getenv("ELEVENLABS_API_KEY")),
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
         "anthropic_sdk_version": getattr(_am, "__version__", "unknown"),
