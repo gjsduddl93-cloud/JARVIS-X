@@ -639,31 +639,19 @@ def create_viral_shorts(content_data: dict):
             f.write(f"file '{os.path.abspath(img_paths[-1])}'\n")
 
         # ── 6. 자막 VF 구성 ──────────────────────────────────────────────────
-        # A/B 테스트: 자막 색상 랜덤 선택 (조회수 비교용)
-        _sub_colors = ["0x00ffff", "0x00ff00", "0xffd700"]  # cyan / lime / gold
-        sub_color   = random.choice(_sub_colors)
-
-        # concat 타임라인: img0=0~5.5s, img1=5.5~11s ...
+        # 아래쪽 1줄 고정: fontsize=32, 흰색, 검은박스 80%
         sub_parts = []
-        safe_title = _ffmpeg_escape(_ascii_only(title_en[:40]))
-        sub_parts.append(
-            # 상단 제목: 64px, 흰색, 처음 3초만 표시
-            f"drawtext=text='{safe_title}'"
-            f":fontsize=64:fontcolor=white:x=(w-text_w)/2:y=120"
-            f":enable='between(t,0,3)':box=1:boxcolor=black@0.8:boxborderw=12"
-        )
         for idx, line in enumerate(subtitle_lines):
             t_s = idx * IMG_DUR + 1.0
             t_e = t_s + IMG_DUR - 1.5
             safe_line = _ffmpeg_escape(_ascii_only(str(line))[:52])
             sub_parts.append(
-                # 하단 자막: 44px, A/B색상, 가독성 80% 박스
                 f"drawtext=text='{safe_line}'"
-                f":fontsize=44:fontcolor={sub_color}:x=(w-text_w)/2:y=h-180"
+                f":fontsize=32:fontcolor=white:x=(w-text_w)/2:y=h-40"
                 f":enable='between(t,{t_s:.1f},{t_e:.1f})'"
                 f":box=1:boxcolor=black@0.8:boxborderw=10"
             )
-        print(f"[VIRAL] 자막 색상 A/B: {sub_color} ({len(subtitle_lines)}줄)")
+        print(f"[VIRAL] 자막 {len(subtitle_lines)}줄 (아래쪽 1줄 고정)")
 
         # Ken Burns: 1.5배 확대 후 이미지별 팬 방향 랜덤 (mod로 이미지당 0~1 진행)
         # scale 1080*1.5=1620, 1920*1.5=2880 → 여유공간 540(x), 960(y)
@@ -1226,6 +1214,56 @@ def home():
     return render_template("index.html", history=session.get("history", []))
 
 
+# ===== YouTube 트렌드 학습 + 다국어 생성 (v18) =====
+
+def get_youtube_trends(keyword: str, region: str = "KR") -> dict:
+    """YouTube 지역별 트렌드 기반 고CTR 제목 생성."""
+    try:
+        prompt = (
+            f"YouTube {region} 트렌드를 반영해서 '{keyword}' 키워드로 "
+            f"고CTR 제목을 3개 만들어줘.\n"
+            f"조건: 15~60자, 숫자/감정사/궁금증 유도, {region} 시장 특성 반영, SEO 최적화.\n"
+            f"형식: 제목1\\n제목2\\n제목3"
+        )
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        titles = [t.strip() for t in resp.content[0].text.split("\n") if t.strip()]
+        return {
+            "region": region,
+            "keyword": keyword,
+            "titles": titles,
+            "best": titles[0] if titles else keyword,
+        }
+    except Exception as e:
+        logger.error(f"트렌드 분석 실패: {e}")
+        return {"error": str(e), "best": keyword}
+
+
+def generate_multilingual_content(keyword: str) -> dict:
+    """한글/영문 YouTube 제목 + 해시태그 동시 생성."""
+    try:
+        kr = get_youtube_trends(keyword, region="KR")
+        en = get_youtube_trends(keyword, region="US")
+        return {
+            "korean":  {
+                "titles": kr.get("titles", []),
+                "best":   kr.get("best", keyword),
+                "hashtags": ["#AI", "#기술", "#수익화", "#자동화"],
+            },
+            "english": {
+                "titles": en.get("titles", []),
+                "best":   en.get("best", keyword),
+                "hashtags": ["#AI", "#Technology", "#Automation", "#Monetization"],
+            },
+        }
+    except Exception as e:
+        logger.error(f"다국어 생성 실패: {e}")
+        return {"error": str(e)}
+
+
 @app.route("/start-video", methods=["POST"])
 def start_video():
     """영상 제작 백그라운드 작업 시작 → 즉시 job_id 반환"""
@@ -1399,7 +1437,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v17-yt-meta-ig-prep",
+        "version":               "v18-subtitle-trend-multilang",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
