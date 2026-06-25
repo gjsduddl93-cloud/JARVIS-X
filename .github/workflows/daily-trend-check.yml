@@ -1,0 +1,30 @@
+name: Daily Trend Topic Log
+
+on:
+  schedule:
+    - cron: '0 0 * * *'   # 09:00 KST (매일)
+  workflow_dispatch:
+
+jobs:
+  log-trend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log today's trending topic
+        run: |
+          DATE=$(date '+%Y-%m-%d')
+          DAY=$(date '+%d')
+          CATEGORIES=("AI" "부업/수익" "기술" "건강/운동" "금융/투자" "일상/라이프" "해외/트렌드" "엔터")
+          IDX=$(( (10#$DAY - 1) % 8 ))
+          CATEGORY="${CATEGORIES[$IDX]}"
+          echo "$DATE | 오늘의 카테고리: $CATEGORY (index=$IDX)" >> trend_log.txt
+          echo "Today: $DATE | Category: $CATEGORY"
+
+      - name: Commit log
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add trend_log.txt
+          git diff --cached --quiet || git commit -m "log: $(date '+%Y-%m-%d') 트렌드 카테고리 기록"
+          git push

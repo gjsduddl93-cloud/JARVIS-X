@@ -1082,23 +1082,30 @@ def upload_to_instagram_reels(video_path: str, caption: str) -> dict:
 
 
 def video_package_json():
-    prompt = """
+    # 오늘의 트렌드 카테고리 주입
+    today_topic = select_todays_topic()
+    category    = today_topic["category"]
+    kw_sample   = ", ".join(today_topic["keywords"][:3])
+
+    prompt = f"""
 유튜브 쇼츠/릴스용 30~45초 영상 데이터를 JSON 형식으로 정확하게 생성해줘.
-트렌디하고 수익성 높은 주제 (AI, 투자, 부업, 생산성, 인생팁 등).
+
+오늘의 트렌드 카테고리: [{category}]
+핵심 키워드 예시: {kw_sample}
+위 카테고리와 키워드에 맞는 주제로 만들어줘.
 
 반드시 이 JSON 형식으로만 응답:
-{
-  "title": "한국어 영상 제목 (30자 이내, 클릭률 높은 제목)",
+{{
+  "title": "한국어 영상 제목 (30자 이내, 클릭률 높은 제목, 숫자/이모지 활용)",
   "title_en": "English title for video overlay (max 40 chars, ASCII only)",
   "description": "YouTube 설명 (150자 이내, 핵심 키워드 포함)",
   "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
   "keywords": ["english keyword1", "keyword2", "keyword3"],
   "narration": "30~45초 분량의 나레이션 (120~150자, 자연스럽고 몰입감 있는 한국어, 반드시 150자 이하)",
   "narration_en": "English narration summary for overlay (max 200 chars, ASCII only, 4-5 key sentences)"
-}
+}}
 
 keywords는 Unsplash 이미지 검색용 영어 키워드 2~3개 (예: ["AI technology", "money success", "future"])
-
 
 JSON 외에 다른 텍스트는 절대 포함하지 말것!
 """
@@ -1307,6 +1314,124 @@ def generate_multilingual_content(keyword: str) -> dict:
         return {"error": str(e)}
 
 
+# ===== 트렌드 기반 자동 주제 시스템 (v20) =====
+
+_TRENDING_CATEGORIES = [
+    {"category": "AI",        "keywords": ["AI로 번다", "ChatGPT 최신", "AI 자동화", "머신러닝 쉽게", "AI 투자"]},
+    {"category": "부업/수익", "keywords": ["부업으로 돈버는법", "하루 10만원 버는법", "집에서 월 300만원", "자동화 수익", "투자로 돈벌기"]},
+    {"category": "기술",      "keywords": ["코딩 쉽게배우기", "파이썬 10분", "개발자 월급", "웹개발 초보", "프로그래밍 팁"]},
+    {"category": "건강/운동", "keywords": ["복부지방 제거", "3주 다이어트", "홈트 효과", "근력운동 팁", "건강한 식단"]},
+    {"category": "금융/투자", "keywords": ["주식 초보자", "암호화폐 뉴스", "부동산 투자", "적금 고금리", "재테크 팁"]},
+    {"category": "일상/라이프","keywords": ["생활팁 20가지", "시간 절약법", "돈절약 꿀팁", "집정리 미니멀", "일중독 탈출"]},
+    {"category": "해외/트렌드","keywords": ["해외 바이럴 영상", "외국인 반응", "국제 뉴스", "글로벌 트렌드", "해외문화"]},
+    {"category": "엔터",      "keywords": ["게임 최신정보", "유튜브 인기", "넷플릭스 추천", "영화 리뷰", "연예뉴스"]},
+]
+
+_CATEGORY_HASHTAGS = {
+    "AI":        ["#AI", "#ChatGPT", "#자동화", "#기술", "#미래"],
+    "부업/수익": ["#부업", "#돈버는법", "#수익화", "#자유", "#재테크"],
+    "기술":      ["#개발", "#코딩", "#프로그래밍", "#파이썬", "#웹개발"],
+    "건강/운동": ["#다이어트", "#운동", "#건강", "#헬스", "#피트니스"],
+    "금융/투자": ["#투자", "#재테크", "#주식", "#금융", "#부자"],
+    "일상/라이프":["#라이프팁", "#일상", "#꿀팁", "#미니멀", "#자기계발"],
+    "해외/트렌드":["#해외", "#트렌드", "#바이럴", "#글로벌", "#반응"],
+    "엔터":      ["#게임", "#유튜브", "#영화", "#넷플릭스", "#엔터"],
+}
+
+
+def select_todays_topic() -> dict:
+    """날짜 기반으로 매일 다른 카테고리 순환."""
+    idx = (datetime.now().day - 1) % len(_TRENDING_CATEGORIES)
+    return _TRENDING_CATEGORIES[idx]
+
+
+def generate_trending_title(keyword: str = None) -> str:
+    """트렌드 기반 고CTR 제목 생성 (Claude Haiku)."""
+    if not keyword:
+        keyword = select_todays_topic()["keywords"][0]
+    try:
+        prompt = (
+            f"YouTube 한국 트렌드 키워드 '{keyword}'로 클릭률 높은 제목 3개 만들어줘.\n"
+            f"조건: 15~60자, 숫자/의외성/호기심 포함, 이모지 활용, '초보자도'/'5분만에'/'대공개' 같은 강렬한 단어.\n"
+            f"형식: 제목1\\n제목2\\n제목3"
+        )
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        titles = [t.strip() for t in resp.content[0].text.split("\n") if t.strip()]
+        return titles[0] if titles else f"【대공개】{keyword}"
+    except Exception as e:
+        logger.error(f"트렌드 제목 생성 실패: {e}")
+        return f"【반드시 봐야 할】{keyword}"
+
+
+def generate_trending_hashtags(category: str = None) -> list:
+    """카테고리별 해시태그 + 영문 태그 조합."""
+    if not category:
+        category = select_todays_topic()["category"]
+    return _CATEGORY_HASHTAGS.get(category, ["#트렌드", "#필수시청"])
+
+
+def generate_trending_description(title: str, category: str = None) -> str:
+    """트렌드 기반 YouTube 설명 자동 생성."""
+    if not category:
+        category = select_todays_topic()["category"]
+    tags = " ".join(generate_trending_hashtags(category))
+    return (
+        f"{title}\n\n"
+        f"오늘의 트렌드 주제: {category}\n\n"
+        f"이 영상에서 다루는 내용:\n"
+        f"✓ 최신 트렌드 정보\n"
+        f"✓ 실생활 바로 적용\n"
+        f"✓ 전문가 팁 포함\n\n"
+        f"구독 & 알림 설정으로 매일 새 콘텐츠를 받아보세요!\n\n"
+        f"{tags}"
+    )
+
+
+def get_trending_metadata() -> dict:
+    """오늘의 트렌드 기반 영상 메타데이터 일괄 생성."""
+    topic    = select_todays_topic()
+    category = topic["category"]
+    keyword  = topic["keywords"][0]
+    title    = generate_trending_title(keyword)
+    return {
+        "title":       title,
+        "description": generate_trending_description(title, category),
+        "keywords":    topic["keywords"],
+        "hashtags":    generate_trending_hashtags(category),
+        "category":    category,
+    }
+
+
+# ===== v20 준비: Pexels 영상 검색 (PEXELS_API_KEY 설정 시 활성화) =====
+
+def get_pexels_videos(keyword: str, count: int = 5) -> list:
+    """Pexels API에서 저작권 무료 영상 URL 목록 반환."""
+    api_key = os.getenv("PEXELS_API_KEY", "")
+    if not api_key:
+        logger.warning("PEXELS_API_KEY 미설정 — v20 배포 시 필요")
+        return []
+    try:
+        resp = requests.get(
+            "https://api.pexels.com/videos/search",
+            headers={"Authorization": api_key},
+            params={"query": keyword, "per_page": count},
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            return [
+                v["video_files"][0]["link"]
+                for v in resp.json().get("videos", [])
+                if v.get("video_files")
+            ]
+    except Exception as e:
+        logger.error(f"Pexels 영상 검색 실패: {e}")
+    return []
+
+
 @app.route("/start-video", methods=["POST"])
 def start_video():
     """영상 제작 백그라운드 작업 시작 → 즉시 job_id 반환"""
@@ -1480,7 +1605,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v19-visual-outline-watermark",
+        "version":               "v20-trending-topics-daily",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
