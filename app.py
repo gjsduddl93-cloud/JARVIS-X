@@ -1162,7 +1162,8 @@ def _run_video_job(job_id: str) -> None:
         _update_job(job_id, content=content_data)
 
         # Step 2: Unsplash 이미지 + 슬라이드쇼 영상 생성
-        _append_log(job_id, "2️⃣ Unsplash 이미지 수집 + Ken Burns 슬라이드쇼 영상 생성 중...")
+        pexels_on = bool(os.getenv("PEXELS_API_KEY"))
+        _append_log(job_id, f"2️⃣ 영상 생성 중... (Pexels={'✅ ON' if pexels_on else '⏸ OFF - 키 없음'})")
         video_path = create_viral_shorts(content_data)
         if not video_path:
             _append_log(job_id, "❌ 영상 생성 실패 (ffmpeg 확인 필요)")
@@ -1190,7 +1191,11 @@ def _run_video_job(job_id: str) -> None:
         elif yt_status == "skipped":
             _append_log(job_id, "💾 YouTube 건너뜀 (Google 패키지 미설치)")
         else:
-            _append_log(job_id, f"❌ YouTube 업로드 실패: {upload.get('message', '알 수 없는 오류')}")
+            msg = upload.get("message", "알 수 없는 오류")
+            if "uploadLimitExceeded" in msg:
+                _append_log(job_id, "⚠️ YouTube 일일 업로드 한도 초과 (자정 UTC=09:00 KST 자동 초기화)")
+            else:
+                _append_log(job_id, f"❌ YouTube 업로드 실패: {msg}")
 
         # Step 4: YouTube 메타 최적화 (업로드 성공 시에만)
         meta_result = {}
