@@ -630,12 +630,17 @@ def _split_narration_subtitles(text: str, n_slides: int) -> list:
     return [sentences[i % len(sentences)] for i in range(n_slides)]
 
 
-def create_viral_shorts(content_data: dict):
+def create_viral_shorts(content_data: dict, job_id: str = ""):
     """
     Unsplash 이미지 슬라이드쇼 + 동적 자막 + TTS + BGM 쇼츠.
     concat demuxer 방식 사용 (filter_complex xfade보다 안정적).
     실패 시 create_simple_video()로 자동 폴백.
     """
+    def _jlog(msg):
+        print(msg)
+        if job_id:
+            _append_log(job_id, msg)
+
     try:
         ts         = datetime.now().strftime("%Y%m%d_%H%M%S")
         video_path = os.path.join(VIDEOS_DIR, f"viral_{ts}.mp4")
@@ -656,8 +661,9 @@ def create_viral_shorts(content_data: dict):
 
         # ── 1. Unsplash 이미지 다운로드 (8개로 증가 → 더 다양한 장면) ──────────
         img_paths = _download_unsplash_images(keywords, count=8)
+        _jlog(f"[VIRAL] 이미지 {len(img_paths)}개 다운로드됨")
         if len(img_paths) < 2:
-            print("[VIRAL] 이미지 부족 → create_simple_video 폴백")
+            _jlog(f"[VIRAL] ❌ 이미지 부족({len(img_paths)}개) → create_simple_video 폴백")
             return create_simple_video(content_data)
 
         n       = len(img_paths)
@@ -773,14 +779,18 @@ def create_viral_shorts(content_data: dict):
         def _try(label, cmd, t=120):
             if os.path.exists(video_path):
                 os.remove(video_path)
-            print(f"[VIRAL] 전략: {label}")
-            _run_ffmpeg(cmd, log_path, timeout=t)
+            _jlog(f"[VIRAL] 전략: {label}")
+            rc, log_content = _run_ffmpeg(cmd, log_path, timeout=t)
             exists = os.path.exists(video_path)
             size   = os.path.getsize(video_path) if exists else 0
             ok     = exists and size > 2000
-            print(f"[VIRAL] {'✅ 성공' if ok else '❌ 실패'} ({label}): {size}B")
-            if not ok and exists:
-                os.remove(video_path)
+            _jlog(f"[VIRAL] {'✅ 성공' if ok else '❌ 실패'} ({label}): rc={rc} {size}B")
+            if not ok:
+                err_lines = [l for l in (log_content or "").splitlines() if "Error" in l or "Invalid" in l or "error" in l]
+                if err_lines:
+                    _jlog(f"[FFMPEG ERR] {err_lines[0][:200]}")
+                if exists:
+                    os.remove(video_path)
             return ok
 
         # ── 전략 실행 ─────────────────────────────────────────────────────────
@@ -1220,7 +1230,7 @@ def _run_video_job(job_id: str) -> None:
         # Step 2: Unsplash 이미지 + 슬라이드쇼 영상 생성
         pexels_on = bool(os.getenv("PEXELS_API_KEY"))
         _append_log(job_id, f"2️⃣ 영상 생성 중... (Pexels={'✅ ON' if pexels_on else '⏸ OFF - 키 없음'})")
-        video_path = create_viral_shorts(content_data)
+        video_path = create_viral_shorts(content_data, job_id=job_id)
         if not video_path:
             _append_log(job_id, "❌ 영상 생성 실패 (ffmpeg 확인 필요)")
             _update_job(job_id, status="error",
@@ -1765,7 +1775,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v24-debug-log",
+        "version":               "v25-job-logging",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "pexels_key_set":        bool(os.getenv("PEXELS_API_KEY")),
         "elevenlabs_key_set":    bool(os.getenv("ELEVENLABS_API_KEY")),
@@ -1782,6 +1792,14 @@ def debug():
         "python_version":        __import__("sys").version,
         "timestamp":             datetime.now().isoformat()
     }), 200
+
+
+@app.route("/test-unsplash", methods=["GET"])
+def test_unsplash():
+    """Unsplash API 직접 테스트"""
+    q = request.args.get("q", "technology AI future")
+    paths = _download_unsplash_images([q], count=3)
+    return jsonify({"query": q, "count": len(paths), "paths": paths}), 200
 
 
 @app.route("/last-log", methods=["GET"])
