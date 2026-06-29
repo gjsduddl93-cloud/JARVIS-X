@@ -671,7 +671,7 @@ def create_viral_shorts(content_data: dict, job_id: str = ""):
 
         # ── 2. TTS 음성 생성 ─────────────────────────────────────────────────
         audio_path = create_tts_audio(narration or title)
-        print(f"[VIRAL] TTS={'있음: '+audio_path if audio_path else '없음'}")
+        _jlog(f"[VIRAL] TTS={'있음' if audio_path else '없음'}")
 
         # ── 3. 자막 분할 ──────────────────────────────────────────────────────
         subtitle_lines = _split_narration_subtitles(narr_en, n)
@@ -688,8 +688,9 @@ def create_viral_shorts(content_data: dict, job_id: str = ""):
         aud_enc = ["-c:a", "aac", "-b:a", "128k"]
 
         # ── 5. Pexels 클립 준비 (PEXELS_API_KEY 있으면) ─────────────────────
+        _jlog("[VIRAL] Pexels 클립 준비 시작")
         pexels_clips = _fetch_pexels_clips(keywords, clip_sec=IMG_DUR, max_clips=2)
-        print(f"[VIRAL] Pexels 클립: {len(pexels_clips)}개")
+        _jlog(f"[VIRAL] Pexels 클립: {len(pexels_clips)}개")
 
         # ── 5b. concat 파일 리스트 생성 (이미지 + Pexels 클립 혼합) ─────────
         # 전체 슬라이드 리스트: 이미지 3장마다 Pexels 클립 1개 삽입
@@ -847,8 +848,10 @@ def create_viral_shorts(content_data: dict, job_id: str = ""):
         return create_simple_video(content_data)
 
     except Exception as e:
-        print(f"[ERROR] create_viral_shorts 예외: {e}")
-        print(traceback.format_exc())
+        err_msg = f"[ERROR] create_viral_shorts 예외: {e}\n{traceback.format_exc()}"
+        print(err_msg)
+        if job_id:
+            _append_log(job_id, f"[VIRAL] ❌ 예외: {e}")
         return create_simple_video(content_data)
 
 
@@ -1775,7 +1778,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v25c-job-logging",
+        "version":               "v26-checkpoints",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "pexels_key_set":        bool(os.getenv("PEXELS_API_KEY")),
         "elevenlabs_key_set":    bool(os.getenv("ELEVENLABS_API_KEY")),
