@@ -762,10 +762,9 @@ def create_viral_shorts(content_data: dict):
         base_vf = (
             f"scale=1620:2880:force_original_aspect_ratio=increase,"
             f"{kb_pan},"
-            f"eq=brightness=0.15:contrast=1.2:saturation=1.7,"
-            f"format=yuv420p"
+            f"eq=brightness=0.15:contrast=1.2:saturation=1.7"
         )
-        sub_vf  = base_vf + "," + ",".join(sub_parts)
+        sub_vf  = base_vf + "," + ",".join(sub_parts) + ",format=yuv420p"
         print(f"[VIRAL] Ken Burns+색상보정: {kb_pan[:40]}...")
 
         # concat demuxer 입력 (input 0) — "ffmpeg -y" 포함 필수
@@ -1766,7 +1765,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v22-voice-pexels-video",
+        "version":               "v23-fix-alpha-format",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "pexels_key_set":        bool(os.getenv("PEXELS_API_KEY")),
         "elevenlabs_key_set":    bool(os.getenv("ELEVENLABS_API_KEY")),
