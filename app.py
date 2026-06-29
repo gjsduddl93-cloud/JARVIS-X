@@ -320,6 +320,26 @@ def _build_ascii_drawtext_vf(title, narration):
     return ",".join(parts)
 
 
+def _build_pillarbox_fc(sub_parts: list, audio_fc: str = "") -> str:
+    """Pillarbox blur + 자막 + 오디오 filter_complex 문자열 생성.
+    배경: 블러 채움 / 전경: 비율 유지 스케일 / 오버레이: 중앙 정렬.
+    """
+    video_part = (
+        "[0:v]split=2[pb_bg][pb_fg];"
+        "[pb_bg]scale=1080:1920:force_original_aspect_ratio=increase,"
+        "crop=1080:1920,boxblur=50:3,format=yuv420p[pb_blurred];"
+        "[pb_fg]scale=1080:1920:force_original_aspect_ratio=decrease,"
+        "format=yuv420p[pb_main];"
+        "[pb_blurred][pb_main]overlay=(W-w)/2:(H-h)/2"
+    )
+    if sub_parts:
+        video_part += "," + ",".join(sub_parts)
+    video_part += ",format=yuv420p[vout]"
+    if audio_fc:
+        return video_part + ";" + audio_fc
+    return video_part
+
+
 def _run_ffmpeg(cmd, log_path, timeout=90):
     """FFmpeg 실행 (Popen+파일 로그). 반환값: (returncode, log_content)."""
     print(f"[FFMPEG CMD] {' '.join(cmd)}")   # 전체 명령어 로그
@@ -712,29 +732,7 @@ def create_viral_shorts(content_data: dict):
             )
         print(f"[VIRAL] 자막 {len(subtitle_lines)}줄 (y=h-260, 52px 아웃라인)")
 
-        # Ken Burns: 1.5배 확대 후 이미지별 팬 방향 랜덤 (mod로 이미지당 0~1 진행)
-        # scale 1080*1.5=1620, 1920*1.5=2880 → 여유공간 540(x), 960(y)
-        # mod(t, D)/D → 각 이미지마다 0→1 진행 (D=IMG_DUR)
-        D = IMG_DUR  # 이미지 1장 표시 시간
-        _kb_pans = [
-            # L→R: x 0→540, y 중앙 고정
-            f"crop=1080:1920:x='min(540,max(0,540*mod(t,{D})/{D}))':y=480",
-            # R→L: x 540→0, y 중앙 고정
-            f"crop=1080:1920:x='min(540,max(0,540*(1-mod(t,{D})/{D})))':y=480",
-            # T→B: x 중앙 고정, y 0→960
-            f"crop=1080:1920:x=270:y='min(960,max(0,960*mod(t,{D})/{D}))'",
-            # B→T: x 중앙 고정, y 960→0
-            f"crop=1080:1920:x=270:y='min(960,max(0,960*(1-mod(t,{D})/{D})))'",
-            # diagonal: x 0→540, y 0→480
-            f"crop=1080:1920:x='min(540,max(0,540*mod(t,{D})/{D}))':y='min(480,max(0,480*mod(t,{D})/{D}))'",
-        ]
-        kb_pan  = random.choice(_kb_pans)
-        base_vf = (
-            f"scale=1620:2880:force_original_aspect_ratio=increase,"
-            f"{kb_pan},format=yuv420p"
-        )
-        sub_vf  = base_vf + "," + ",".join(sub_parts)
-        print(f"[VIRAL] Ken Burns 팬: {kb_pan[:45]}...")
+        print("[VIRAL] Pillarbox blur 효과 적용 (boxblur=50:3, 배경블러+비율유지)")
 
         # concat demuxer 입력 (input 0) — "ffmpeg -y" 포함 필수
         concat_in = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt]
@@ -755,8 +753,8 @@ def create_viral_shorts(content_data: dict):
         # ── 전략 실행 ─────────────────────────────────────────────────────────
 
         if audio_path and os.path.exists(audio_path):
-            # 전략 1: 슬라이드쇼 + 자막 + 음성 + BGM
-            fc1 = (
+            # 전략 1: pillarbox + 자막 + 음성 + BGM
+            audio_fc1 = (
                 "[1:a]volume=1.0[voice];"
                 "[2:a]volume=0.25[bgm];"
                 "[voice][bgm]amix=inputs=2:duration=first[aout]"
@@ -764,42 +762,41 @@ def create_viral_shorts(content_data: dict):
             cmd1 = (
                 concat_in + ["-i", audio_path] +
                 ["-f", "lavfi", "-i", bgm_lavfi] +
-                ["-filter_complex", fc1] +
-                ["-vf", sub_vf] +
-                ["-map", "0:v", "-map", "[aout]"] +
+                ["-filter_complex", _build_pillarbox_fc(sub_parts, audio_fc1)] +
+                ["-map", "[vout]", "-map", "[aout]"] +
                 vid_enc + aud_enc + ["-t", "45", "-shortest", video_path]
             )
-            if _try("concat+sub+voice+bgm", cmd1):
+            if _try("pillarbox+sub+voice+bgm", cmd1):
                 return video_path
 
-            # 전략 2: 슬라이드쇼 + 자막 + 음성 (BGM 없음)
+            # 전략 2: pillarbox + 자막 + 음성 (BGM 없음)
             cmd2 = (
                 concat_in + ["-i", audio_path] +
-                ["-vf", sub_vf] +
-                ["-map", "0:v", "-map", "1:a"] +
+                ["-filter_complex", _build_pillarbox_fc(sub_parts, "[1:a]volume=1.0[aout]")] +
+                ["-map", "[vout]", "-map", "[aout]"] +
                 vid_enc + aud_enc + ["-t", "45", "-shortest", video_path]
             )
-            if _try("concat+sub+voice", cmd2):
+            if _try("pillarbox+sub+voice", cmd2):
                 return video_path
 
-            # 전략 3: 슬라이드쇼 + 음성 (자막 없음)
+            # 전략 3: pillarbox + 음성 (자막 없음)
             cmd3 = (
                 concat_in + ["-i", audio_path] +
-                ["-vf", base_vf] +
-                ["-map", "0:v", "-map", "1:a"] +
+                ["-filter_complex", _build_pillarbox_fc([], "[1:a]volume=1.0[aout]")] +
+                ["-map", "[vout]", "-map", "[aout]"] +
                 vid_enc + aud_enc + ["-t", "45", "-shortest", video_path]
             )
-            if _try("concat+voice", cmd3):
+            if _try("pillarbox+voice", cmd3):
                 return video_path
 
-        # 전략 4: 무음 슬라이드쇼
+        # 전략 4: 무음 pillarbox 슬라이드쇼
         cmd4 = (
             concat_in +
-            ["-vf", base_vf] +
-            ["-map", "0:v"] +
+            ["-filter_complex", _build_pillarbox_fc([])] +
+            ["-map", "[vout]"] +
             vid_enc + ["-t", str(n * IMG_DUR), video_path]
         )
-        if _try("concat-only", cmd4):
+        if _try("pillarbox-only", cmd4):
             return video_path
 
         print("[VIRAL] 모든 슬라이드쇼 전략 실패 → create_simple_video 폴백")
@@ -1504,15 +1501,21 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
                 logger.warning(f"[PEXELS] 다운로드 실패: {e}")
                 continue
 
-            # 전처리: clip_sec 자르기 + 세로 1080×1920 스케일 + 오디오 제거
+            # 전처리: clip_sec 자르기 + pillarbox blur 1080×1920 + 오디오 제거
             cmd = [
                 "ffmpeg", "-y", "-ss", "0", "-i", raw_path,
                 "-t", str(clip_sec),
-                "-vf", (
-                    f"scale=1620:2880:force_original_aspect_ratio=increase,"
-                    f"crop=1080:1920,format=yuv420p"
+                "-filter_complex",
+                (
+                    "[0:v]split=2[pb_bg][pb_fg];"
+                    "[pb_bg]scale=1080:1920:force_original_aspect_ratio=increase,"
+                    "crop=1080:1920,boxblur=50:3,format=yuv420p[pb_blurred];"
+                    "[pb_fg]scale=1080:1920:force_original_aspect_ratio=decrease,"
+                    "format=yuv420p[pb_main];"
+                    "[pb_blurred][pb_main]overlay=(W-w)/2:(H-h)/2,format=yuv420p[out]"
                 ),
-                "-an",                         # 오디오 제거 (TTS가 대신함)
+                "-map", "[out]",
+                "-an",
                 "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
                 "-threads", "1",
                 clip_path,
