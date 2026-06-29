@@ -2,9 +2,8 @@ name: Daily Video Generation (09:00 KST)
 
 on:
   schedule:
-    # 매일 00:00 UTC = 09:00 KST
     - cron: '0 0 * * *'
-  workflow_dispatch:  # 수동 실행도 가능
+  workflow_dispatch:
 
 jobs:
   generate-videos:
@@ -12,12 +11,12 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: 📅 현재 날짜 확인
+      - name: '📅 현재 날짜 확인'
         run: |
           echo "🕐 Current Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "🇰🇷 Korea Time: $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M:%S KST')"
+          echo "🇰🇷 Korea Time: $(date -u -d '+9 hours' '+%Y-%m-%d %H:%M:%S KST')"
 
-      - name: 📝 오늘의 트렌드 카테고리 결정
+      - name: '📝 오늘의 트렌드 카테고리 결정'
         id: category
         run: |
           TODAY=$(date +%d)
@@ -25,86 +24,64 @@ jobs:
           CATEGORIES=("AI" "부업/수익" "기술" "건강/운동" "금융/투자" "일상/라이프" "해외/트렌드" "엔터")
           CATEGORY=${CATEGORIES[$CATEGORY_NUM]}
           echo "category=$CATEGORY" >> $GITHUB_OUTPUT
-          echo "📌 오늘 카테고리: $CATEGORY (날짜: $TODAY)"
+          echo "📌 오늘 카테고리: $CATEGORY"
 
-      - name: 🎬 영상 생성 요청 #1
+      - name: '🎬 영상 생성 요청 1/3'
         id: job1
         run: |
-          echo "📤 Job 1/3 생성 요청 중..."
+          echo "📤 Job 1/3 생성 중..."
           RESPONSE=$(curl -s -X POST https://jarvis-x-1-nqt6.onrender.com/start-video)
           JOB_ID=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('job_id', 'ERROR'))" 2>/dev/null || echo "ERROR")
           echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
           echo "✅ Job 1: $JOB_ID"
 
-      - name: 🎬 영상 생성 요청 #2
+      - name: '🎬 영상 생성 요청 2/3'
         id: job2
         run: |
           sleep 2
-          echo "📤 Job 2/3 생성 요청 중..."
+          echo "📤 Job 2/3 생성 중..."
           RESPONSE=$(curl -s -X POST https://jarvis-x-1-nqt6.onrender.com/start-video)
           JOB_ID=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('job_id', 'ERROR'))" 2>/dev/null || echo "ERROR")
           echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
           echo "✅ Job 2: $JOB_ID"
 
-      - name: 🎬 영상 생성 요청 #3
+      - name: '🎬 영상 생성 요청 3/3'
         id: job3
         run: |
           sleep 2
-          echo "📤 Job 3/3 생성 요청 중..."
+          echo "📤 Job 3/3 생성 중..."
           RESPONSE=$(curl -s -X POST https://jarvis-x-1-nqt6.onrender.com/start-video)
           JOB_ID=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('job_id', 'ERROR'))" 2>/dev/null || echo "ERROR")
           echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
           echo "✅ Job 3: $JOB_ID"
 
-      - name: ⏳ 영상 생성 완료 대기
+      - name: '⏳ YouTube 업로드 완료 대기'
         run: |
-          echo "⏳ 영상 생성 중... (최대 10분)"
-          for i in $(seq 1 60); do
+          echo "⏳ 영상 업로드 대기중... (최대 10분)"
+          for i in {1..60}; do
             STATUS=$(curl -s https://jarvis-x-1-nqt6.onrender.com/stats 2>/dev/null | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('youtube_uploaded', 0))" 2>/dev/null || echo "0")
             if [ "$STATUS" -ge 3 ]; then
-              echo "✅ 3개 영상 모두 YouTube 업로드 완료!"
+              echo "✅ 3개 영상 모두 업로드 완료!"
               break
             fi
-            echo "[$i/60] 대기 중... (현재 업로드: ${STATUS}개)"
+            echo "[$i/60] 대기... (현재: $STATUS개)"
             sleep 10
           done
 
-      - name: 📊 최종 통계 확인
+      - name: '📊 최종 통계'
         run: |
-          echo "📊 최종 통계 조회 중..."
-          curl -s https://jarvis-x-1-nqt6.onrender.com/stats | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-print('날짜:', d.get('date'))
-print('생성됨:', d.get('done'), '개')
-print('업로드됨:', d.get('youtube_uploaded'), '개')
-print('오류:', d.get('error'), '개')
-print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-" 2>/dev/null || echo "통계 조회 실패"
+          curl -s https://jarvis-x-1-nqt6.onrender.com/stats 2>/dev/null | python3 -c "import sys, json; d=json.load(sys.stdin); print('✅ 생성:', d.get('done'), '개, ✅ 업로드:', d.get('youtube_uploaded'), '개')" 2>/dev/null || echo "통계 조회 실패"
 
-      - name: 📥 Checkout repository
-        uses: actions/checkout@v4
-
-      - name: 📝 로그 기록 & Git 커밋
+      - name: '📝 로그 저장'
         run: |
-          DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          cat >> trend_log.txt << LOGEOF
+          echo "Daily video generation - $(date -u '+%Y-%m-%d %H:%M UTC')" > trend_log.txt
+          echo "Category: ${{ steps.category.outputs.category }}" >> trend_log.txt
+          echo "Jobs: ${{ steps.job1.outputs.job_id }}, ${{ steps.job2.outputs.job_id }}, ${{ steps.job3.outputs.job_id }}" >> trend_log.txt
 
-═══════════════════════════════════════
-날짜: $DATE
-카테고리: ${{ steps.category.outputs.category }}
-Job IDs: ${{ steps.job1.outputs.job_id }}, ${{ steps.job2.outputs.job_id }}, ${{ steps.job3.outputs.job_id }}
-═══════════════════════════════════════
-LOGEOF
+      - name: '📤 Git 커밋'
+        run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add trend_log.txt
-          git diff --cached --quiet || git commit -m "log: Daily video generation - $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git commit -m "log: Daily video generation $(date -u '+%Y-%m-%d')" || echo "No changes"
           git push origin main || echo "Push failed"
-
-      - name: ✅ 완료
-        run: |
-          echo "✅ 일일 자동 영상 생성 완료!"
-          echo "📺 YouTube: https://www.youtube.com/@future.minute-ai"
-          echo "📊 Stats: https://jarvis-x-1-nqt6.onrender.com/stats"
