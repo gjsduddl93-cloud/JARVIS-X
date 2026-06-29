@@ -1775,7 +1775,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v25b-job-logging",
+        "version":               "v25c-job-logging",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "pexels_key_set":        bool(os.getenv("PEXELS_API_KEY")),
         "elevenlabs_key_set":    bool(os.getenv("ELEVENLABS_API_KEY")),
@@ -1792,14 +1792,6 @@ def debug():
         "python_version":        __import__("sys").version,
         "timestamp":             datetime.now().isoformat()
     }), 200
-
-
-@app.route("/test-unsplash", methods=["GET"])
-def test_unsplash():
-    """Unsplash API 직접 테스트"""
-    q = request.args.get("q", "technology AI future")
-    paths = _download_unsplash_images([q], count=3)
-    return jsonify({"query": q, "count": len(paths), "paths": paths}), 200
 
 
 @app.route("/last-log", methods=["GET"])
