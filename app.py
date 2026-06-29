@@ -560,7 +560,8 @@ def _download_unsplash_images(keywords: list, count: int = 5) -> list:
         print("[UNSPLASH] UNSPLASH_API_KEY 없음")
         return []
 
-    query = " ".join(str(k) for k in keywords[:3]) if keywords else "technology AI future"
+    base_q = " ".join(str(k) for k in keywords[:2]) if keywords else "technology AI future"
+    query  = base_q + " bright colorful"
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     print(f"[UNSPLASH] 검색: '{query}' ({count}개 요청)")
 
@@ -750,7 +751,7 @@ def create_viral_shorts(content_data: dict):
         base_vf = (
             f"scale=1620:2880:force_original_aspect_ratio=increase,"
             f"{kb_pan},"
-            f"eq=brightness=0.06:contrast=1.12:saturation=1.5,"
+            f"eq=brightness=0.10:contrast=1.15:saturation=1.6,"
             f"format=yuv420p"
         )
         sub_vf  = base_vf + "," + ",".join(sub_parts)
@@ -973,29 +974,54 @@ def _generate_seo_title(title: str, narration: str) -> str:
 
 
 def _create_thumbnail(title_en: str, ts: str | None = None) -> str | None:
-    """FFmpeg로 YouTube 썸네일 생성 (1280x720 JPG)."""
+    """FFmpeg로 YouTube 썸네일 생성 (1280x720 JPG). 강렬한 컬러 배경 디자인."""
     if ts is None:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out      = os.path.join(IMAGES_DIR, f"thumbnail_{ts}.jpg")
     log_path = os.path.join(IMAGES_DIR, f"thumb_{ts}.log")
-    safe_txt = _ffmpeg_escape(_ascii_only(title_en[:32]))
+
+    # 배경/강조색 랜덤 선택 (클릭률 높은 조합)
+    schemes = [
+        ("0x0d1b2a", "0xffd700", "0xff6b35"),  # 딥네이비 + 골드 + 오렌지
+        ("0x1a0533", "0x00ff9d", "0xff3cac"),  # 딥퍼플 + 민트 + 핑크
+        ("0x0a2200", "0xadff2f", "0xffd700"),  # 딥그린 + 라임 + 골드
+        ("0x1a0000", "0xff4444", "0xffd700"),  # 딥레드 + 레드 + 골드
+        ("0x001a33", "0x00d4ff", "0xffd700"),  # 딥블루 + 하늘 + 골드
+    ]
+    bg, accent, accent2 = random.choice(schemes)
+
+    # 제목 두 줄 분리 (단어 경계 기준)
+    words = _ascii_only(title_en).split()
+    mid   = max(1, len(words) // 2)
+    line1 = _ffmpeg_escape(" ".join(words[:mid])[:30])
+    line2 = _ffmpeg_escape(" ".join(words[mid:])[:30])
 
     cmd = [
         "ffmpeg", "-y",
         "-f", "lavfi",
-        # 진한 배경: 어두운 네이비 계열
-        "-i", "color=c=0x0d1117:size=1280x720:rate=1",
+        "-i", f"color=c={bg}:size=1280x720:rate=1",
         "-vf", (
-            # 채널명 (상단 좌측, 시안색 작은 폰트)
-            "drawtext=text='future.minute':fontsize=30:fontcolor=0x00ffff"
-            ":x=50:y=40:box=0,"
-            # 메인 제목 (중앙, 흰색 큰 폰트)
-            f"drawtext=text='{safe_txt}':fontsize=68:fontcolor=white"
-            ":x=(w-text_w)/2:y=(h-text_h)/2"
-            ":box=1:boxcolor=black@0.55:boxborderw=24,"
-            # 하단 AI 쇼츠 레이블
-            "drawtext=text='AI SHORTS':fontsize=26:fontcolor=0xffd700"
-            ":x=50:y=h-60:box=0"
+            # 상단 강조 바
+            f"drawbox=x=0:y=0:w=1280:h=10:color={accent}:t=fill,"
+            # 하단 강조 바
+            f"drawbox=x=0:y=710:w=1280:h=10:color={accent}:t=fill,"
+            # 좌측 수직 강조 바
+            f"drawbox=x=0:y=0:w=12:h=720:color={accent2}:t=fill,"
+            # 제목 첫째 줄 (흰색)
+            f"drawtext=text='{line1}':fontsize=88:fontcolor=white"
+            ":x=(w-text_w)/2:y=200"
+            ":borderw=5:bordercolor=black@0.95"
+            ":shadowx=4:shadowy=4:shadowcolor=black@0.7,"
+            # 제목 둘째 줄 (강조색)
+            f"drawtext=text='{line2}':fontsize=88:fontcolor={accent}"
+            ":x=(w-text_w)/2:y=315"
+            ":borderw=5:bordercolor=black@0.95"
+            ":shadowx=4:shadowy=4:shadowcolor=black@0.7,"
+            # 채널 뱃지 배경
+            "drawbox=x=50:y=620:w=320:h=60:color=white@0.12:t=fill,"
+            # 채널명
+            f"drawtext=text='@future.minute':fontsize=32:fontcolor={accent}"
+            ":x=70:y=634:borderw=2:bordercolor=black@0.6"
         ),
         "-frames:v", "1",
         out
@@ -1531,7 +1557,7 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
                 "-vf", (
                     f"scale=1620:2880:force_original_aspect_ratio=increase,"
                     f"crop=1080:1920,"
-                    f"eq=brightness=0.06:contrast=1.12:saturation=1.5,"
+                    f"eq=brightness=0.10:contrast=1.15:saturation=1.6,"
                     f"format=yuv420p"
                 ),
                 "-an",
