@@ -1378,7 +1378,7 @@ def get_youtube_trends(keyword: str, region: str = "KR") -> dict:
             "best": titles[0] if titles else keyword,
         }
     except Exception as e:
-        logger.error(f"트렌드 분석 실패: {e}")
+        print("[ERROR]",f"트렌드 분석 실패: {e}")
         return {"error": str(e), "best": keyword}
 
 
@@ -1400,7 +1400,7 @@ def generate_multilingual_content(keyword: str) -> dict:
             },
         }
     except Exception as e:
-        logger.error(f"다국어 생성 실패: {e}")
+        print("[ERROR]",f"다국어 생성 실패: {e}")
         return {"error": str(e)}
 
 
@@ -1453,7 +1453,7 @@ def generate_trending_title(keyword: str = None) -> str:
         titles = [t.strip() for t in resp.content[0].text.split("\n") if t.strip()]
         return titles[0] if titles else f"【대공개】{keyword}"
     except Exception as e:
-        logger.error(f"트렌드 제목 생성 실패: {e}")
+        print("[ERROR]",f"트렌드 제목 생성 실패: {e}")
         return f"【반드시 봐야 할】{keyword}"
 
 
@@ -1502,7 +1502,7 @@ def get_pexels_videos(keyword: str, count: int = 5) -> list:
     """Pexels API에서 저작권 무료 영상 URL 목록 반환."""
     api_key = os.getenv("PEXELS_API_KEY", "")
     if not api_key:
-        logger.warning("PEXELS_API_KEY 미설정 — v20 배포 시 필요")
+        print("[WARN]","PEXELS_API_KEY 미설정 — v20 배포 시 필요")
         return []
     try:
         resp = requests.get(
@@ -1518,7 +1518,7 @@ def get_pexels_videos(keyword: str, count: int = 5) -> list:
                 if v.get("video_files")
             ]
     except Exception as e:
-        logger.error(f"Pexels 영상 검색 실패: {e}")
+        print("[ERROR]",f"Pexels 영상 검색 실패: {e}")
     return []
 
 
@@ -1543,7 +1543,7 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
             timeout=15,
         )
         if resp.status_code != 200:
-            logger.warning(f"[PEXELS] HTTP {resp.status_code}")
+            print("[WARN]",f"[PEXELS] HTTP {resp.status_code}")
             return []
 
         for idx, v in enumerate(resp.json().get("videos", [])):
@@ -1570,7 +1570,7 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
                 if os.path.getsize(raw_path) < 10000:
                     continue
             except Exception as e:
-                logger.warning(f"[PEXELS] 다운로드 실패: {e}")
+                print("[WARN]",f"[PEXELS] 다운로드 실패: {e}")
                 continue
 
             # 전처리: clip_sec 자르기 + 세로 1080×1920 스케일 + 색상보정 + 오디오 제거
@@ -1593,14 +1593,14 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
 
             if os.path.exists(clip_path) and os.path.getsize(clip_path) > 5000:
                 clips.append(clip_path)
-                logger.info(f"[PEXELS] 클립 준비: {clip_path}")
+                print("[INFO]",f"[PEXELS] 클립 준비: {clip_path}")
             try:
                 os.remove(raw_path)
             except Exception:
                 pass
 
     except Exception as e:
-        logger.error(f"[PEXELS] 클립 준비 실패: {e}")
+        print("[ERROR]",f"[PEXELS] 클립 준비 실패: {e}")
 
     return clips
 
@@ -1778,7 +1778,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v26-checkpoints",
+        "version":               "v27-fix-logger",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "pexels_key_set":        bool(os.getenv("PEXELS_API_KEY")),
         "elevenlabs_key_set":    bool(os.getenv("ELEVENLABS_API_KEY")),
