@@ -1775,7 +1775,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v25-job-logging",
+        "version":               "v25b-job-logging",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "pexels_key_set":        bool(os.getenv("PEXELS_API_KEY")),
         "elevenlabs_key_set":    bool(os.getenv("ELEVENLABS_API_KEY")),
