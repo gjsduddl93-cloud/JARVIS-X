@@ -1765,7 +1765,7 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v23-fix-alpha-format",
+        "version":               "v24-debug-log",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "pexels_key_set":        bool(os.getenv("PEXELS_API_KEY")),
         "elevenlabs_key_set":    bool(os.getenv("ELEVENLABS_API_KEY")),
@@ -1782,6 +1782,18 @@ def debug():
         "python_version":        __import__("sys").version,
         "timestamp":             datetime.now().isoformat()
     }), 200
+
+
+@app.route("/last-log", methods=["GET"])
+def last_log():
+    """최근 FFmpeg 로그 반환 (디버그용)"""
+    import glob
+    logs = sorted(glob.glob(os.path.join(IMAGES_DIR, "ffmpeg_viral_*.log")), reverse=True)
+    if not logs:
+        return "No ffmpeg_viral logs found", 200
+    with open(logs[0], encoding="utf-8", errors="replace") as f:
+        content = f.read()
+    return f"=== {logs[0]} ===\n\n" + content[-8000:], 200
 
 
 @app.route("/test-youtube", methods=["GET"])
