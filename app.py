@@ -554,60 +554,71 @@ def create_simple_video(content_data):
 # ── Unsplash 이미지 다운로드 ──────────────────────────────────────────────────
 
 def _download_unsplash_images(keywords: list, count: int = 5) -> list:
-    """Unsplash API로 portrait 이미지 다운로드. 성공한 파일 경로 목록 반환."""
+    """Unsplash API로 이미지 다운로드. portrait 우선 → 부족하면 일반 검색으로 재시도."""
     api_key = os.getenv("UNSPLASH_API_KEY", "").strip()
     if not api_key:
         print("[UNSPLASH] UNSPLASH_API_KEY 없음")
         return []
 
-    base_q = " ".join(str(k) for k in keywords[:2]) if keywords else "technology AI future"
-    query  = base_q + " bright colorful"
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    print(f"[UNSPLASH] 검색: '{query}' ({count}개 요청)")
+    base_q   = " ".join(str(k) for k in keywords[:2]) if keywords else "technology AI future"
+    ts       = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    img_paths: list = []
 
-    try:
-        resp = requests.get(
-            "https://api.unsplash.com/search/photos",
-            params={"query": query, "per_page": count + 3, "orientation": "portrait"},
-            headers={"Authorization": f"Client-ID {api_key}"},
-            timeout=15,
-        )
-        if resp.status_code != 200:
-            print(f"[UNSPLASH] HTTP {resp.status_code}: {resp.text[:200]}")
-            return []
+    # 쿼리 시도 순서: portrait 우선 → orientation 없이 → 범용 밝은 키워드
+    search_attempts = [
+        (base_q, "portrait"),
+        (base_q, None),
+        ("technology success business", "portrait"),
+        ("bright colorful abstract", None),
+    ]
 
-        photos = resp.json().get("results", [])
-        print(f"[UNSPLASH] 검색 결과: {len(photos)}개")
-
-        img_paths = []
-        for i, photo in enumerate(photos):
-            if len(img_paths) >= count:
-                break
-            img_url = (photo.get("urls", {}).get("regular") or
-                       photo.get("urls", {}).get("small", ""))
-            if not img_url:
+    for attempt_q, orientation in search_attempts:
+        if len(img_paths) >= count:
+            break
+        need = count - len(img_paths)
+        params: dict = {"query": attempt_q, "per_page": need + 3}
+        if orientation:
+            params["orientation"] = orientation
+        print(f"[UNSPLASH] 검색: '{attempt_q}' orient={orientation} need={need}")
+        try:
+            resp = requests.get(
+                "https://api.unsplash.com/search/photos",
+                params=params,
+                headers={"Authorization": f"Client-ID {api_key}"},
+                timeout=15,
+            )
+            if resp.status_code != 200:
+                print(f"[UNSPLASH] HTTP {resp.status_code}")
                 continue
-            img_path = os.path.join(IMAGES_DIR, f"unsplash_{ts}_{i}.jpg")
-            try:
-                ir = requests.get(img_url, timeout=20, stream=True)
-                if ir.status_code == 200:
-                    with open(img_path, "wb") as f:
-                        for chunk in ir.iter_content(8192):
-                            f.write(chunk)
-                    size = os.path.getsize(img_path)
-                    if size > 5000:
-                        img_paths.append(img_path)
-                        print(f"[UNSPLASH] {len(img_paths)}번 이미지: {size//1024}KB")
-                    else:
-                        os.remove(img_path)
-            except Exception as e:
-                print(f"[UNSPLASH] 이미지 {i} 실패: {e}")
+            photos = resp.json().get("results", [])
+            print(f"[UNSPLASH] 결과: {len(photos)}개")
+            for i, photo in enumerate(photos):
+                if len(img_paths) >= count:
+                    break
+                img_url = (photo.get("urls", {}).get("regular") or
+                           photo.get("urls", {}).get("small", ""))
+                if not img_url:
+                    continue
+                img_path = os.path.join(IMAGES_DIR, f"unsplash_{ts}_{len(img_paths)}.jpg")
+                try:
+                    ir = requests.get(img_url, timeout=20, stream=True)
+                    if ir.status_code == 200:
+                        with open(img_path, "wb") as f:
+                            for chunk in ir.iter_content(8192):
+                                f.write(chunk)
+                        size = os.path.getsize(img_path)
+                        if size > 5000:
+                            img_paths.append(img_path)
+                            print(f"[UNSPLASH] {len(img_paths)}번: {size//1024}KB")
+                        else:
+                            os.remove(img_path)
+                except Exception as e:
+                    print(f"[UNSPLASH] 다운로드 실패: {e}")
+        except Exception as e:
+            print(f"[UNSPLASH] 요청 실패: {e}")
 
-        print(f"[UNSPLASH] 최종 {len(img_paths)}개 준비")
-        return img_paths
-    except Exception as e:
-        print(f"[UNSPLASH] 예외: {e}")
-        return []
+    print(f"[UNSPLASH] 최종 {len(img_paths)}개 준비")
+    return img_paths
 
 
 def _split_narration_subtitles(text: str, n_slides: int) -> list:
@@ -751,7 +762,7 @@ def create_viral_shorts(content_data: dict):
         base_vf = (
             f"scale=1620:2880:force_original_aspect_ratio=increase,"
             f"{kb_pan},"
-            f"eq=brightness=0.10:contrast=1.15:saturation=1.6,"
+            f"eq=brightness=0.15:contrast=1.2:saturation=1.7,"
             f"format=yuv420p"
         )
         sub_vf  = base_vf + "," + ",".join(sub_parts)
@@ -1557,7 +1568,7 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
                 "-vf", (
                     f"scale=1620:2880:force_original_aspect_ratio=increase,"
                     f"crop=1080:1920,"
-                    f"eq=brightness=0.10:contrast=1.15:saturation=1.6,"
+                    f"eq=brightness=0.15:contrast=1.2:saturation=1.7,"
                     f"format=yuv420p"
                 ),
                 "-an",
