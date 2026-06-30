@@ -1929,10 +1929,11 @@ def debug():
         ffmpeg_ver = str(e)
 
     return jsonify({
-        "version":               "v27-fix-logger",
+        "version":               "v28-quality",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "pexels_key_set":        bool(os.getenv("PEXELS_API_KEY")),
         "elevenlabs_key_set":    bool(os.getenv("ELEVENLABS_API_KEY")),
+        "naver_tts_key_set":     bool(os.getenv("NAVER_CLIENT_ID") and os.getenv("NAVER_CLIENT_SECRET")),
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
         "anthropic_client_ok":   claude_client is not None,
         "anthropic_sdk_version": getattr(_am, "__version__", "unknown"),
@@ -1942,6 +1943,7 @@ def debug():
         "google_available":      GOOGLE_AVAILABLE,
         "ffmpeg_available":      ffmpeg_ok,
         "ffmpeg_version":        ffmpeg_ver,
+        "korean_font":           _find_korean_font(),
         "active_jobs":           len(_jobs),
         "python_version":        __import__("sys").version,
         "timestamp":             datetime.now().isoformat()
