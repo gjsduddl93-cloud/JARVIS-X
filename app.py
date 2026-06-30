@@ -1761,6 +1761,20 @@ def auto_create():
             "count": sum(1 for r in results if r.startswith("✅"))}, 200
 
 
+@app.route("/download/<job_id>", methods=["GET"])
+def download_video(job_id):
+    """생성된 영상 파일 다운로드"""
+    from flask import send_file
+    job = _get_job(job_id)
+    if not job:
+        return jsonify({"error": "server_restarted", "message": "서버 재시작으로 파일이 사라졌습니다."}), 404
+    video_path = job.get("video_path")
+    if not video_path or not os.path.exists(video_path):
+        return jsonify({"error": "file_not_found", "message": f"영상 파일 없음: {video_path}"}), 404
+    filename = os.path.basename(video_path)
+    return send_file(video_path, as_attachment=True, download_name=filename, mimetype="video/mp4")
+
+
 @app.route("/health", methods=["GET"])
 def health():
     return {"status": "ok", "timestamp": datetime.now().isoformat()}, 200
