@@ -35,9 +35,7 @@ jobs:
         run: mkdir -p data/trending_data logs
 
       - name: Step 1 - Collect viral data (18:00 KST)
-        if: |
-          github.event_name == 'workflow_dispatch' && (github.event.inputs.step == 'all' || github.event.inputs.step == 'collect') ||
-          github.event_name == 'schedule' && startsWith(github.event.schedule, '0 9')
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 9 * * *'
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GOOGLE_API_KEY:  ${{ secrets.GOOGLE_API_KEY }}
@@ -47,9 +45,7 @@ jobs:
           echo "✅ 수집 완료"
 
       - name: Step 2 - Analyze patterns (21:00 KST)
-        if: |
-          github.event_name == 'workflow_dispatch' && (github.event.inputs.step == 'all' || github.event.inputs.step == 'analyze') ||
-          github.event_name == 'schedule' && startsWith(github.event.schedule, '0 12')
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 12 * * *'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           YOUTUBE_API_KEY:   ${{ secrets.YOUTUBE_API_KEY }}
@@ -59,9 +55,7 @@ jobs:
           echo "✅ 분석 완료"
 
       - name: Step 3 - Learn from success (23:00 KST)
-        if: |
-          github.event_name == 'workflow_dispatch' && (github.event.inputs.step == 'all' || github.event.inputs.step == 'learn') ||
-          github.event_name == 'schedule' && startsWith(github.event.schedule, '0 14')
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 14 * * *'
         env:
           YOUTUBE_API_KEY:      ${{ secrets.YOUTUBE_API_KEY }}
           GOOGLE_API_KEY:       ${{ secrets.GOOGLE_API_KEY }}
@@ -73,9 +67,7 @@ jobs:
           echo "✅ 성과 학습 완료"
 
       - name: Step 4 - Update prompts (23:00 KST, after Step 3)
-        if: |
-          github.event_name == 'workflow_dispatch' && (github.event.inputs.step == 'all' || github.event.inputs.step == 'update') ||
-          github.event_name == 'schedule' && startsWith(github.event.schedule, '0 14')
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 14 * * *'
         run: |
           echo "✍️ 프롬프트 업데이트 시작..."
           python scripts/4_update_prompts.py
