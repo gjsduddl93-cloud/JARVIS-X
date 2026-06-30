@@ -400,7 +400,7 @@ def _run_ffmpeg(cmd, log_path, timeout=90):
 
 
 def create_tts_audio(text: str, lang: str = "ko") -> str | None:
-    """ElevenLabs TTS (우선) → gTTS fallback → None 순서로 MP3 생성."""
+    """ElevenLabs → Naver Clova → gTTS 순서로 MP3 생성."""
     # 150자 제한 → 한국어 TTS 약 40~45초 분량 (Shorts 60초 이내)
     narr = (text or "").strip()[:150]
     if not narr:
@@ -409,11 +409,10 @@ def create_tts_audio(text: str, lang: str = "ko") -> str | None:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     audio_path = os.path.join(AUDIO_DIR, f"tts_{ts}.mp3")
 
-    # ── 1. ElevenLabs (고품질 한국어) ─────────────────────────────────────────
+    # ── 1. ElevenLabs (고품질 다국어) ─────────────────────────────────────────
     el_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
     if el_key:
         try:
-            # EXAVITQu4vr4xnSDxMaL = Sarah (자연스러운 다국어, 한국어 발음 우수)
             voice_id = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
             url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
             payload = {
@@ -445,9 +444,47 @@ def create_tts_audio(text: str, lang: str = "ko") -> str | None:
         except Exception as e:
             print(f"[TTS] ElevenLabs 예외: {e}")
     else:
-        print("[TTS] ELEVENLABS_API_KEY 없음 → gTTS 사용")
+        print("[TTS] ELEVENLABS_API_KEY 없음 → Naver Clova 시도")
 
-    # ── 2. gTTS fallback ──────────────────────────────────────────────────────
+    # ── 2. Naver Clova TTS (고품질 한국어) ────────────────────────────────────
+    naver_id  = os.getenv("NAVER_CLIENT_ID", "").strip()
+    naver_secret = os.getenv("NAVER_CLIENT_SECRET", "").strip()
+    if naver_id and naver_secret:
+        try:
+            speaker = os.getenv("NAVER_TTS_SPEAKER", "nara")  # nara(여), jinho(남)
+            data = {
+                "speaker": speaker,
+                "volume":  "0",
+                "speed":   "0",
+                "pitch":   "0",
+                "format":  "mp3",
+                "text":    narr,
+            }
+            headers = {
+                "X-NCP-APIGW-API-KEY-ID":  naver_id,
+                "X-NCP-APIGW-API-KEY":     naver_secret,
+                "Content-Type": "application/x-www-form-urlencoded",
+            }
+            print(f"[TTS] Naver Clova 요청 중... ({len(narr)}자, speaker={speaker})")
+            resp = requests.post(
+                "https://naveropenapi.apigw.ntruss.com/tts-premium/v1/tts",
+                data=data, headers=headers, timeout=30,
+            )
+            if resp.status_code == 200:
+                with open(audio_path, "wb") as f:
+                    f.write(resp.content)
+                size = os.path.getsize(audio_path)
+                print(f"[TTS] Naver Clova 완료: {audio_path} ({size}B)")
+                if size > 500:
+                    return audio_path
+            else:
+                print(f"[TTS] Naver Clova HTTP {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            print(f"[TTS] Naver Clova 예외: {e}")
+    else:
+        print("[TTS] NAVER_CLIENT_ID/SECRET 없음 → gTTS 사용")
+
+    # ── 3. gTTS fallback (무료) ───────────────────────────────────────────────
     try:
         from gtts import gTTS
         print(f"[TTS] gTTS 음성 생성 중... ({len(narr[:400])}자)")
