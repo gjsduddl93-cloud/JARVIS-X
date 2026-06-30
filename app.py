@@ -540,8 +540,8 @@ def create_simple_video(content_data):
         # geq 그라데이션은 Render 0.1vCPU에서 OOM 유발 → 사용 안 함
         bg_in   = ["ffmpeg", "-y", "-f", "lavfi",
                    "-i", "color=c=0x080818:size=1080x1920:rate=24"]
-        vid_enc = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-                   "-pix_fmt", "yuv420p", "-threads", "1"]
+        vid_enc = ["-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                   "-pix_fmt", "yuv420p", "-threads", "2"]
         aud_enc = ["-c:a", "aac", "-b:a", "128k"]
 
         ascii_vf = _build_ascii_drawtext_vf(title_en, narr_en)
@@ -744,18 +744,28 @@ def create_viral_shorts(content_data: dict, job_id: str = ""):
         audio_path = create_tts_audio(narration or title)
         _jlog(f"[VIRAL] TTS={'있음' if audio_path else '없음'}")
 
-        # ── 3. 자막 분할 ──────────────────────────────────────────────────────
-        subtitle_lines = _split_narration_subtitles(narr_en, n)
+        # ── 3. 자막 분할 (한국어 우선) ────────────────────────────────────────
+        ko_font = _find_korean_font()
+        if ko_font and narration:
+            # 한국어 16자 단위 분할
+            subtitle_lines = [narration[i:i+16] for i in range(0, min(len(narration), 16 * n), 16)]
+            while len(subtitle_lines) < n:
+                subtitle_lines.append("")
+            subtitle_lines = subtitle_lines[:n]
+            _jlog(f"[VIRAL] 자막: 한국어 폰트 사용 ({ko_font.split('/')[-1]})")
+        else:
+            subtitle_lines = _split_narration_subtitles(narr_en, n)
+            _jlog("[VIRAL] 자막: ASCII 폴백 (한국어 폰트 없음)")
 
         # ── 4. BGM ────────────────────────────────────────────────────────────
         bgm_expr  = (
-            "0.12*sin(110*2*PI*t)*(0.6+0.4*sin(0.5*2*PI*t))"
-            "+0.08*sin(220*2*PI*t)+0.05*sin(330*2*PI*t)+0.03*sin(440*2*PI*t)"
+            "0.08*sin(110*2*PI*t)*(0.6+0.4*sin(0.5*2*PI*t))"
+            "+0.05*sin(220*2*PI*t)+0.03*sin(330*2*PI*t)+0.02*sin(440*2*PI*t)"
         )
         bgm_lavfi = f"aevalsrc={bgm_expr}:s=44100:c=stereo"
 
-        vid_enc = ["-c:v", "libx264", "-preset", "ultrafast",
-                   "-crf", "28", "-pix_fmt", "yuv420p", "-threads", "1"]
+        vid_enc = ["-c:v", "libx264", "-preset", "fast",
+                   "-crf", "23", "-pix_fmt", "yuv420p", "-threads", "2"]
         aud_enc = ["-c:a", "aac", "-b:a", "128k"]
 
         # ── 5. Pexels 클립 준비 (PEXELS_API_KEY 있으면) ─────────────────────
@@ -816,16 +826,29 @@ def create_viral_shorts(content_data: dict, job_id: str = ""):
         for idx, line in enumerate(subtitle_lines):
             t_s = idx * IMG_DUR + 0.5
             t_e = t_s + IMG_DUR - 1.0
-            safe_line = _ffmpeg_escape(_ascii_only(str(line))[:36])
-            sub_parts.append(
-                f"drawtext=text='{safe_line}'"
-                f":fontsize=52:fontcolor=yellow"
-                f":x=(w-text_w)/2:y=h-240"
-                f":enable='between(t,{t_s:.1f},{t_e:.1f})'"
-                f":borderw=4:bordercolor=black@0.95"
-                f":shadowx=3:shadowy=3:shadowcolor=black@0.8"
-            )
-        print(f"[VIRAL] 자막 {len(subtitle_lines)}줄 (y=h-240, 52px 노란색+박스)")
+            if ko_font and line:
+                fp = ko_font.replace("\\", "/")
+                safe_line = _ffmpeg_escape(str(line)[:18])
+                sub_parts.append(
+                    f"drawtext=fontfile='{fp}'"
+                    f":text='{safe_line}'"
+                    f":fontsize=54:fontcolor=yellow"
+                    f":x=(w-text_w)/2:y=h-240"
+                    f":enable='between(t,{t_s:.1f},{t_e:.1f})'"
+                    f":borderw=4:bordercolor=black@0.95"
+                    f":shadowx=3:shadowy=3:shadowcolor=black@0.8"
+                )
+            else:
+                safe_line = _ffmpeg_escape(_ascii_only(str(line))[:36])
+                sub_parts.append(
+                    f"drawtext=text='{safe_line}'"
+                    f":fontsize=52:fontcolor=yellow"
+                    f":x=(w-text_w)/2:y=h-240"
+                    f":enable='between(t,{t_s:.1f},{t_e:.1f})'"
+                    f":borderw=4:bordercolor=black@0.95"
+                    f":shadowx=3:shadowy=3:shadowcolor=black@0.8"
+                )
+        print(f"[VIRAL] 자막 {len(subtitle_lines)}줄 ({'한국어' if ko_font else 'ASCII'}, 54px 노란색+박스)")
 
         # ── Ken Burns + 색상보정 VF 구성 ─────────────────────────────────────
         D = IMG_DUR
@@ -871,7 +894,7 @@ def create_viral_shorts(content_data: dict, job_id: str = ""):
             # 전략 1: 슬라이드쇼 + 자막 + 음성 + BGM
             fc1 = (
                 "[1:a]volume=1.0[voice];"
-                "[2:a]volume=0.25[bgm];"
+                "[2:a]volume=0.12[bgm];"
                 "[voice][bgm]amix=inputs=2:duration=first[aout]"
             )
             cmd1 = (
@@ -1282,27 +1305,30 @@ def video_package_json():
         print(f"[INFO] video_package_json: 학습 데이터 v{vp.get('version',1)} 적용")
 
     prompt = f"""
-유튜브 쇼츠/릴스용 30~45초 영상 데이터를 JSON 형식으로 정확하게 생성해줘.
+유튜브 쇼츠용 30~45초 영상 데이터를 JSON으로 생성해줘.
 
-오늘의 트렌드 카테고리: [{category}]
-핵심 키워드 예시: {kw_sample}
-위 카테고리와 키워드에 맞는 주제로 만들어줘.
+오늘의 카테고리: [{category}]
+핵심 키워드: {kw_sample}
 {learned_hint}
 
-반드시 이 JSON 형식으로만 응답:
+【나레이션 필수 구조 — 이 순서를 반드시 지킬 것】
+1줄(훅): 충격적 사실 또는 "이거 모르면 손해" 식 첫 문장 (시청자가 3초 안에 멈추게)
+2~4줄(핵심): 구체적 정보 or 방법 (숫자, 사례 포함)
+5줄(CTA): "저장해두세요" or "알림 설정하면 매일 알려드려요"
+
+반드시 이 JSON만 반환:
 {{
-  "title": "한국어 영상 제목 (30자 이내, 클릭률 높은 제목, 숫자/이모지 활용)",
-  "title_en": "English title for video overlay (max 40 chars, ASCII only)",
-  "description": "YouTube 설명 (150자 이내, 핵심 키워드 포함)",
-  "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
+  "title": "한국어 제목 (25자 이내, ❌/숫자/이모지 활용, 클릭 유도)",
+  "title_en": "English title (max 35 chars, ASCII only)",
+  "description": "YouTube 설명 (200자 이내, 핵심 키워드 + 해시태그 3개 포함)",
+  "tags": ["태그1", "태그2", "태그3", "태그4", "태그5", "태그6", "태그7"],
   "keywords": ["english keyword1", "keyword2", "keyword3"],
-  "narration": "30~45초 분량의 나레이션 (120~150자, 자연스럽고 몰입감 있는 한국어, 반드시 150자 이하)",
-  "narration_en": "English narration summary for overlay (max 200 chars, ASCII only, 4-5 key sentences)"
+  "narration": "훅→핵심→CTA 구조 나레이션 (130~150자, 한국어, 반드시 150자 이하, 숫자/구체적 사례 포함)",
+  "narration_en": "Hook->info->CTA in English (max 180 chars, ASCII only, punchy)"
 }}
 
-keywords는 Unsplash 이미지 검색용 영어 키워드 2~3개 (예: ["AI technology", "money success", "future"])
-
-JSON 외에 다른 텍스트는 절대 포함하지 말것!
+keywords는 Unsplash 이미지 검색용 영어 키워드 2~3개.
+JSON 외 텍스트 절대 금지!
 """
     print("[INFO] video_package_json: AI 요청 중...")
     response = ask_ai(prompt, 1200)

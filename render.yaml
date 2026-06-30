@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: jarvis-x-1
+    env: python
+    plan: free
+    buildCommand: apt-get install -y fonts-nanum 2>/dev/null || true && pip install -r requirements.txt
+    startCommand: gunicorn app:app --timeout 180 --graceful-timeout 30 --workers 1 --worker-class gthread --threads 4
