@@ -68,6 +68,21 @@ DATA_DIR     = "data"
 for _dir in [PROJECTS_DIR, VIDEOS_DIR, AUDIO_DIR, IMAGES_DIR, DATA_DIR]:
     os.makedirs(_dir, exist_ok=True)
 
+# ── 한국어 폰트 자동 설치 (Render 서버 시작 시) ──────────────────────────────
+_NANUM_PATH = "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"
+if not os.path.exists(_NANUM_PATH):
+    try:
+        _r = subprocess.run(
+            ["apt-get", "install", "-y", "--no-install-recommends", "fonts-nanum"],
+            capture_output=True, timeout=60
+        )
+        if _r.returncode == 0:
+            print("[FONT] fonts-nanum 설치 완료")
+        else:
+            print(f"[FONT] apt-get 실패: {_r.stderr.decode()[:200]}")
+    except Exception as _fe:
+        print(f"[FONT] 폰트 설치 실패: {_fe}")
+
 # ── 자체 학습 시스템: viral_patterns.json 로드 ────────────────────────────────
 _VIRAL_PATTERNS_FILE = os.path.join(DATA_DIR, "viral_patterns.json")
 _SUCCESS_METRICS_FILE = os.path.join(DATA_DIR, "success_metrics.json")
