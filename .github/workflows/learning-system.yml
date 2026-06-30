@@ -1,0 +1,118 @@
+name: Daily Learning System
+
+on:
+  schedule:
+    - cron: '0 9 * * *'   # 18:00 KST - 트렌딩 수집
+    - cron: '0 12 * * *'  # 21:00 KST - 패턴 분석
+    - cron: '0 14 * * *'  # 23:00 KST - 성과 학습 + 프롬프트 업데이트
+  workflow_dispatch:
+    inputs:
+      step:
+        description: '실행할 단계 (all/collect/analyze/learn/update)'
+        required: false
+        default: 'all'
+
+jobs:
+  learning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install anthropic python-dotenv google-api-python-client google-auth
+
+      - name: Create data dirs
+        run: mkdir -p data/trending_data logs
+
+      - name: Step 1 - Collect viral data (18:00 KST)
+        if: |
+          github.event_name == 'workflow_dispatch' && (github.event.inputs.step == 'all' || github.event.inputs.step == 'collect') ||
+          github.event_name == 'schedule' && startsWith(github.event.schedule, '0 9')
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GOOGLE_API_KEY:  ${{ secrets.GOOGLE_API_KEY }}
+        run: |
+          echo "🔍 트렌딩 Shorts 수집 시작..."
+          python scripts/1_collect_viral_data.py
+          echo "✅ 수집 완료"
+
+      - name: Step 2 - Analyze patterns (21:00 KST)
+        if: |
+          github.event_name == 'workflow_dispatch' && (github.event.inputs.step == 'all' || github.event.inputs.step == 'analyze') ||
+          github.event_name == 'schedule' && startsWith(github.event.schedule, '0 12')
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          YOUTUBE_API_KEY:   ${{ secrets.YOUTUBE_API_KEY }}
+        run: |
+          echo "🤖 Claude 패턴 분석 시작..."
+          python scripts/2_analyze_patterns.py
+          echo "✅ 분석 완료"
+
+      - name: Step 3 - Learn from success (23:00 KST)
+        if: |
+          github.event_name == 'workflow_dispatch' && (github.event.inputs.step == 'all' || github.event.inputs.step == 'learn') ||
+          github.event_name == 'schedule' && startsWith(github.event.schedule, '0 14')
+        env:
+          YOUTUBE_API_KEY:      ${{ secrets.YOUTUBE_API_KEY }}
+          GOOGLE_API_KEY:       ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_CLIENT_ID:     ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: |
+          echo "📊 자체 영상 성과 학습 시작..."
+          python scripts/3_learn_success.py
+          echo "✅ 성과 학습 완료"
+
+      - name: Step 4 - Update prompts (23:00 KST, after Step 3)
+        if: |
+          github.event_name == 'workflow_dispatch' && (github.event.inputs.step == 'all' || github.event.inputs.step == 'update') ||
+          github.event_name == 'schedule' && startsWith(github.event.schedule, '0 14')
+        run: |
+          echo "✍️ 프롬프트 업데이트 시작..."
+          python scripts/4_update_prompts.py
+          echo "✅ 프롬프트 업데이트 완료"
+
+      - name: Commit updated patterns
+        if: always()
+        run: |
+          git config user.name  "JARVIS-X Learning Bot"
+          git config user.email "bot@jarvis-x.auto"
+          git add data/viral_patterns.json data/success_metrics.json \
+                  data/trending_data/ logs/ 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "변경사항 없음"
+          else
+            git commit -m "chore: 자체 학습 시스템 업데이트 $(date '+%Y-%m-%d %H:%M KST')"
+            git push
+            echo "✅ 학습 데이터 커밋 완료"
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📚 학습 시스템 실행 완료"
+          echo "🕐 $(date '+%Y-%m-%d %H:%M UTC') (KST +9h)"
+          echo ""
+          if [ -f data/viral_patterns.json ]; then
+            echo "📊 viral_patterns.json:"
+            python3 -c "
+import json
+d = json.load(open('data/viral_patterns.json'))
+print(f'  버전: v{d.get(\"version\",1)}')
+print(f'  업데이트: {d.get(\"updated_at\",\"\")}')
+print(f'  패턴 수: {len(d.get(\"title_patterns\",[]))}개')
+print(f'  키워드 수: {len(d.get(\"trending_keywords\",[]))}개')
+print(f'  오늘 프롬프트: {d.get(\"today_prompt\",\"\")[:60]}...')
+"
+          fi
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -63,9 +63,43 @@ PROJECTS_DIR = "projects"
 VIDEOS_DIR   = os.path.join(PROJECTS_DIR, "videos")
 AUDIO_DIR    = os.path.join(PROJECTS_DIR, "audio")
 IMAGES_DIR   = os.path.join(PROJECTS_DIR, "images")
+DATA_DIR     = "data"
 
-for _dir in [PROJECTS_DIR, VIDEOS_DIR, AUDIO_DIR, IMAGES_DIR]:
+for _dir in [PROJECTS_DIR, VIDEOS_DIR, AUDIO_DIR, IMAGES_DIR, DATA_DIR]:
     os.makedirs(_dir, exist_ok=True)
+
+# ── 자체 학습 시스템: viral_patterns.json 로드 ────────────────────────────────
+_VIRAL_PATTERNS_FILE = os.path.join(DATA_DIR, "viral_patterns.json")
+_SUCCESS_METRICS_FILE = os.path.join(DATA_DIR, "success_metrics.json")
+
+def _load_viral_patterns() -> dict:
+    """viral_patterns.json 로드 (없으면 빈 dict)."""
+    try:
+        with open(_VIRAL_PATTERNS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _save_success_metric(video_id: str, title: str, youtube_url: str) -> None:
+    """업로드 성공 영상을 success_metrics.json에 기록."""
+    try:
+        try:
+            with open(_SUCCESS_METRICS_FILE, encoding="utf-8") as f:
+                metrics = json.load(f)
+        except Exception:
+            metrics = {"videos": {}}
+        metrics.setdefault("videos", {})[video_id] = {
+            "title":        title,
+            "published_at": datetime.now().isoformat(),
+            "views":        0,
+            "likes":        0,
+            "url":          youtube_url,
+            "tracked_at":   datetime.now().strftime("%Y%m%d"),
+        }
+        with open(_SUCCESS_METRICS_FILE, "w", encoding="utf-8") as f:
+            json.dump(metrics, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[WARN] success_metrics 저장 실패: {e}")
 
 # ── 백그라운드 작업 저장소 ────────────────────────────────────────────────────
 # { job_id: {status, logs, content, video_path, youtube, error, created_at} }
@@ -982,16 +1016,34 @@ def clean_filename(text):
 # ── YouTube SEO + 썸네일 최적화 ──────────────────────────────────────────────
 
 def _generate_seo_title(title: str, narration: str) -> str:
-    """Claude API로 CTR 최적화 제목 생성. 실패 시 원본 반환."""
+    """viral_patterns.json 학습 데이터를 반영한 CTR 최적화 제목 생성."""
+    vp            = _load_viral_patterns()
+    today_prompt  = vp.get("today_prompt", "")
+    top_patterns  = vp.get("title_patterns", [])
+    hot_keywords  = [k["keyword"] for k in vp.get("trending_keywords", [])[:3]]
+    weekday       = vp.get("today_weekday", "")
+
+    # 학습 데이터 주입
+    learned_hint = ""
+    if top_patterns:
+        best = top_patterns[0].get("pattern", "")
+        learned_hint = f"\n학습된 최고 패턴: {best}"
+    if hot_keywords:
+        learned_hint += f"\n트렌딩 키워드 우선 사용: {', '.join(hot_keywords)}"
+    if today_prompt:
+        learned_hint += f"\n오늘의 인사이트: {today_prompt[:100]}"
+
     prompt = (
         f"아래 유튜브 쇼츠 제목을 CTR이 높아지도록 리라이팅해줘.\n"
-        f"원본: {title}\n내용: {narration[:80]}\n\n"
+        f"원본: {title}\n내용: {narration[:80]}\n"
+        f"{learned_hint}\n\n"
         "규칙: 한국어, 100자 이내, 숫자/결과/궁금증 포함, 제목만 반환."
     )
     result = ask_claude(prompt, 200)
     if result:
         result = result.strip().strip('"').strip("'").strip()
         if result and len(result) <= 100:
+            print(f"[INFO] SEO 제목 생성 (학습 v{vp.get('version',1)}): {result[:40]}")
             return result
     return title
 
@@ -1172,12 +1224,33 @@ def video_package_json():
     category    = today_topic["category"]
     kw_sample   = ", ".join(today_topic["keywords"][:3])
 
+    # 학습 데이터 주입
+    vp           = _load_viral_patterns()
+    learned_hint = ""
+    if vp:
+        top_patterns = vp.get("title_patterns", [])
+        hot_keywords = [k["keyword"] for k in vp.get("trending_keywords", [])[:3]]
+        today_prompt = vp.get("today_prompt", "")
+        hot_cats     = vp.get("hot_categories", [])
+
+        if top_patterns:
+            best_ex = top_patterns[0].get("example", top_patterns[0].get("pattern", ""))
+            learned_hint += f"\n학습된 최고 제목 형식: {top_patterns[0].get('pattern','')} (예: {best_ex})"
+        if hot_keywords:
+            learned_hint += f"\n반드시 포함할 트렌딩 키워드: {', '.join(hot_keywords)}"
+        if hot_cats:
+            learned_hint += f"\n트렌딩 카테고리: {', '.join(hot_cats[:2])}"
+        if today_prompt:
+            learned_hint += f"\n오늘의 학습 인사이트: {today_prompt[:120]}"
+        print(f"[INFO] video_package_json: 학습 데이터 v{vp.get('version',1)} 적용")
+
     prompt = f"""
 유튜브 쇼츠/릴스용 30~45초 영상 데이터를 JSON 형식으로 정확하게 생성해줘.
 
 오늘의 트렌드 카테고리: [{category}]
 핵심 키워드 예시: {kw_sample}
 위 카테고리와 키워드에 맞는 주제로 만들어줘.
+{learned_hint}
 
 반드시 이 JSON 형식으로만 응답:
 {{
@@ -1254,6 +1327,7 @@ def _run_video_job(job_id: str) -> None:
         yt_status = upload.get("status")
         if yt_status == "success":
             _append_log(job_id, f"✅ YouTube 업로드 완료!\n🔗 {upload.get('url')}")
+            _save_success_metric(upload.get("video_id", ""), title_ko, upload.get("url", ""))
         elif yt_status == "auth_required":
             _append_log(job_id,
                 f"⚠️ YouTube 인증 필요: {upload.get('message', '')}")
