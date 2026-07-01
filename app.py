@@ -1318,9 +1318,12 @@ def video_package_json():
 위 문장을 나레이션 시작 부분에 자연스럽게 녹여서 시청자를 충격시켜라.
 """
 
+    current_year = datetime.now().year
+
     prompt = f"""
 유튜브 쇼츠용 30~45초 영상 데이터를 JSON으로 생성해줘.
 이 채널(@future.minute-ai)은 AI 자동화로 수익 내는 방법을 알려주는 채널이다.
+현재 연도: {current_year}년 (제목/나레이션에 연도 언급 시 반드시 {current_year}년 사용)
 
 오늘의 카테고리: [{category}]
 핵심 키워드: {kw_sample}
