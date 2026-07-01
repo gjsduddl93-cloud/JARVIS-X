@@ -1281,10 +1281,13 @@ def upload_to_instagram_reels(video_path: str, caption: str) -> dict:
 
 
 def video_package_json():
-    # 오늘의 트렌드 카테고리 주입
+    import random
+    # 랜덤 카테고리 + 랜덤 키워드 선택 (배치 3개가 서로 다른 주제)
     today_topic = select_todays_topic()
     category    = today_topic["category"]
-    kw_sample   = ", ".join(today_topic["keywords"][:3])
+    meta_hook   = today_topic.get("meta_hook")
+    kw_list     = today_topic["keywords"]
+    kw_sample   = random.choice(kw_list)  # 단일 키워드 랜덤 선택
 
     # 학습 데이터 주입
     vp           = _load_viral_patterns()
@@ -1306,17 +1309,27 @@ def video_package_json():
             learned_hint += f"\n오늘의 학습 인사이트: {today_prompt[:120]}"
         print(f"[INFO] video_package_json: 학습 데이터 v{vp.get('version',1)} 적용")
 
+    # 메타 훅 지시문 (AI가 만든 영상 메타 콘텐츠용)
+    meta_hook_instruction = ""
+    if meta_hook:
+        meta_hook_instruction = f"""
+【메타 콘텐츠 — 반드시 나레이션 첫 문장에 삽입할 것】
+"{meta_hook}"
+위 문장을 나레이션 시작 부분에 자연스럽게 녹여서 시청자를 충격시켜라.
+"""
+
     prompt = f"""
 유튜브 쇼츠용 30~45초 영상 데이터를 JSON으로 생성해줘.
+이 채널(@future.minute-ai)은 AI 자동화로 수익 내는 방법을 알려주는 채널이다.
 
 오늘의 카테고리: [{category}]
 핵심 키워드: {kw_sample}
 {learned_hint}
-
+{meta_hook_instruction}
 【나레이션 필수 구조 — 이 순서를 반드시 지킬 것】
 1줄(훅): 충격적 사실 또는 "이거 모르면 손해" 식 첫 문장 (시청자가 3초 안에 멈추게)
 2~4줄(핵심): 구체적 정보 or 방법 (숫자, 사례 포함)
-5줄(CTA): "저장해두세요" or "알림 설정하면 매일 알려드려요"
+5줄(CTA): "저장해두세요" or "알림 설정하면 매일 AI 자동화 꿀팁 드려요"
 
 반드시 이 JSON만 반환:
 {{
@@ -1543,35 +1556,67 @@ def generate_multilingual_content(keyword: str) -> dict:
         return {"error": str(e)}
 
 
-# ===== 트렌드 기반 자동 주제 시스템 (v20) =====
+# ===== 트렌드 기반 자동 주제 시스템 (v29 — AI 전용 채널) =====
 
 _TRENDING_CATEGORIES = [
-    {"category": "AI",        "keywords": ["AI로 번다", "ChatGPT 최신", "AI 자동화", "머신러닝 쉽게", "AI 투자"]},
-    {"category": "부업/수익", "keywords": ["부업으로 돈버는법", "하루 10만원 버는법", "집에서 월 300만원", "자동화 수익", "투자로 돈벌기"]},
-    {"category": "기술",      "keywords": ["코딩 쉽게배우기", "파이썬 10분", "개발자 월급", "웹개발 초보", "프로그래밍 팁"]},
-    {"category": "건강/운동", "keywords": ["복부지방 제거", "3주 다이어트", "홈트 효과", "근력운동 팁", "건강한 식단"]},
-    {"category": "금융/투자", "keywords": ["주식 초보자", "암호화폐 뉴스", "부동산 투자", "적금 고금리", "재테크 팁"]},
-    {"category": "일상/라이프","keywords": ["생활팁 20가지", "시간 절약법", "돈절약 꿀팁", "집정리 미니멀", "일중독 탈출"]},
-    {"category": "해외/트렌드","keywords": ["해외 바이럴 영상", "외국인 반응", "국제 뉴스", "글로벌 트렌드", "해외문화"]},
-    {"category": "엔터",      "keywords": ["게임 최신정보", "유튜브 인기", "넷플릭스 추천", "영화 리뷰", "연예뉴스"]},
+    {
+        "category": "AI수익화",
+        "keywords": ["ChatGPT 수익 방법", "AI로 월급 버는법", "AI 자동화 부업", "Claude로 돈버는법", "AI 수익 현실"],
+        "meta_hook": None,
+    },
+    {
+        "category": "AI영상제작",
+        "keywords": ["AI가 만든 유튜브", "AI 콘텐츠 자동화", "AI 유튜브 채널", "AI 영상 제작 도구", "자동 영상 업로드"],
+        "meta_hook": "지금 보고 계신 이 영상, AI가 처음부터 끝까지 만들었습니다. 기획·촬영·편집까지 사람 손이 하나도 안 닿았어요.",
+    },
+    {
+        "category": "AI도구비교",
+        "keywords": ["ChatGPT vs Claude", "최고의 AI 도구", "무료 AI 툴 추천", "AI 앱 비교", "생산성 AI 도구"],
+        "meta_hook": None,
+    },
+    {
+        "category": "AI자동화창업",
+        "keywords": ["AI로 창업하기", "무자본 AI 사업", "AI 1인 창업", "AI 에이전트 활용", "자동화 비즈니스"],
+        "meta_hook": None,
+    },
+    {
+        "category": "AI미래직업",
+        "keywords": ["AI가 없애는 직업", "AI 시대 살아남기", "AI 대체 불가 직업", "2025 AI 전망", "AI 시대 유망직종"],
+        "meta_hook": None,
+    },
+    {
+        "category": "AI실전사례",
+        "keywords": ["AI 수익 인증", "월 100만원 AI 부업", "AI 자동화 성공사례", "AI 수익 현실 후기", "AI로 퇴사한 사람"],
+        "meta_hook": None,
+    },
+    {
+        "category": "AI채널운영",
+        "keywords": ["AI 유튜브 채널 만들기", "AI 자동 업로드", "구독자 없이 AI 수익", "AI가 운영하는 채널", "AI 구독자 늘리기"],
+        "meta_hook": "이 채널은 사람이 운영하지 않습니다. AI가 기획·제작·업로드까지 전부 자동으로 합니다. 이게 바로 AI 자동화 수익의 현실입니다.",
+    },
+    {
+        "category": "AI생산성",
+        "keywords": ["ChatGPT 업무 활용", "AI로 10배 빠르게", "직장인 AI 필수 도구", "AI 자동보고서", "AI로 야근 없애기"],
+        "meta_hook": None,
+    },
 ]
 
 _CATEGORY_HASHTAGS = {
-    "AI":        ["#AI", "#ChatGPT", "#자동화", "#기술", "#미래"],
-    "부업/수익": ["#부업", "#돈버는법", "#수익화", "#자유", "#재테크"],
-    "기술":      ["#개발", "#코딩", "#프로그래밍", "#파이썬", "#웹개발"],
-    "건강/운동": ["#다이어트", "#운동", "#건강", "#헬스", "#피트니스"],
-    "금융/투자": ["#투자", "#재테크", "#주식", "#금융", "#부자"],
-    "일상/라이프":["#라이프팁", "#일상", "#꿀팁", "#미니멀", "#자기계발"],
-    "해외/트렌드":["#해외", "#트렌드", "#바이럴", "#글로벌", "#반응"],
-    "엔터":      ["#게임", "#유튜브", "#영화", "#넷플릭스", "#엔터"],
+    "AI수익화":   ["#AI수익", "#ChatGPT", "#AI부업", "#자동화수익", "#AI돈버는법"],
+    "AI영상제작": ["#AI영상", "#AI유튜브", "#콘텐츠자동화", "#AI제작", "#미래유튜브"],
+    "AI도구비교": ["#AI도구", "#ChatGPT", "#Claude", "#AI추천", "#생산성"],
+    "AI자동화창업":["#AI창업", "#자동화비즈니스", "#1인기업", "#AI에이전트", "#무자본창업"],
+    "AI미래직업": ["#AI미래", "#직업변화", "#AI시대", "#미래직업", "#AI전망"],
+    "AI실전사례": ["#AI수익인증", "#AI부업후기", "#자동화성공", "#AI현실", "#수익화사례"],
+    "AI채널운영": ["#AI채널", "#유튜브자동화", "#AI구독자", "#자동업로드", "#AI콘텐츠"],
+    "AI생산성":   ["#AI생산성", "#ChatGPT업무", "#직장인AI", "#업무자동화", "#AI효율"],
 }
 
 
 def select_todays_topic() -> dict:
-    """날짜 기반으로 매일 다른 카테고리 순환."""
-    idx = (datetime.now().day - 1) % len(_TRENDING_CATEGORIES)
-    return _TRENDING_CATEGORIES[idx]
+    """호출마다 랜덤 카테고리 선택 — 같은 날 배치 3개가 각기 다른 주제."""
+    import random
+    return random.choice(_TRENDING_CATEGORIES)
 
 
 def generate_trending_title(keyword: str = None) -> str:
@@ -1610,13 +1655,13 @@ def generate_trending_description(title: str, category: str = None) -> str:
     tags = " ".join(generate_trending_hashtags(category))
     return (
         f"{title}\n\n"
-        f"오늘의 트렌드 주제: {category}\n\n"
+        f"[{category}] AI 자동화로 바꾸는 당신의 수익 구조\n\n"
         f"이 영상에서 다루는 내용:\n"
-        f"✓ 최신 트렌드 정보\n"
-        f"✓ 실생활 바로 적용\n"
-        f"✓ 전문가 팁 포함\n\n"
-        f"구독 & 알림 설정으로 매일 새 콘텐츠를 받아보세요!\n\n"
-        f"{tags}"
+        f"✓ AI 자동화 실전 방법\n"
+        f"✓ 바로 따라할 수 있는 수익화 팁\n"
+        f"✓ 이 영상도 AI가 직접 제작했습니다\n\n"
+        f"구독 & 알림 설정으로 매일 AI 자동화 꿀팁을 받아보세요!\n\n"
+        f"{tags} #AI자동화 #future_minute"
     )
 
 
