@@ -15,24 +15,21 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      # ── 1. Render 콜드 스타트 깨우기 ───────────────────────────────────────────
+      # ── 1. Render 콜드 스타트 깨우기 + 헬스체크 (최대 3분 재시도) ──────────────
       - name: Wake up Render service
         run: |
-          echo "🔔 Render 콜드 스타트 대기 중..."
-          curl -sf --max-time 60 "${{ secrets.RENDER_URL }}/health" || true
-          sleep 20
-          echo "⏰ 대기 완료"
-
-      # ── 2. 헬스체크 ─────────────────────────────────────────────────────────────
-      - name: Health check
-        run: |
-          HEALTH=$(curl -sf --max-time 30 "${{ secrets.RENDER_URL }}/health")
-          echo "Health: $HEALTH"
-          if ! echo "$HEALTH" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('status')=='ok' else 1)"; then
-            echo "❌ 헬스체크 실패"
-            exit 1
-          fi
-          echo "✅ 서비스 정상"
+          echo "🔔 Render 콜드 스타트 대기 중 (최대 3분)..."
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            STATUS=$(curl -sf --max-time 30 "${{ secrets.RENDER_URL }}/health" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null || echo "")
+            if [ "$STATUS" = "ok" ]; then
+              echo "✅ 서비스 정상 (시도 $i)"
+              exit 0
+            fi
+            echo "⏳ 시도 $i/10 실패, 20초 후 재시도..."
+            sleep 20
+          done
+          echo "❌ 3분 내 헬스체크 실패"
+          exit 1
 
       # ── 3. 배치 영상 3개 시작 ───────────────────────────────────────────────────
       - name: Start batch (3개)
