@@ -694,6 +694,90 @@ def _download_unsplash_images(keywords: list, count: int = 5) -> list:
     return img_paths
 
 
+def _download_pixabay_images(keywords: list, count: int = 5) -> list:
+    """Pixabay API로 이미지 다운로드. Unsplash 부족 시 보충 소스."""
+    api_key = os.getenv("PIXABAY_API_KEY", "").strip()
+    if not api_key:
+        print("[PIXABAY] PIXABAY_API_KEY 없음")
+        return []
+
+    base_q   = " ".join(str(k) for k in keywords[:2]) if keywords else "technology AI"
+    ts       = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    img_paths: list = []
+
+    search_attempts = [
+        (base_q, "vertical"),
+        (base_q, "horizontal"),
+        ("artificial intelligence technology", "vertical"),
+        ("business success future", None),
+    ]
+
+    for attempt_q, orientation in search_attempts:
+        if len(img_paths) >= count:
+            break
+        need   = count - len(img_paths)
+        params = {
+            "key":        api_key,
+            "q":          attempt_q,
+            "image_type": "photo",
+            "per_page":   min(need + 3, 20),
+            "safesearch": "true",
+            "lang":       "en",
+        }
+        if orientation:
+            params["orientation"] = orientation
+        print(f"[PIXABAY] 검색: '{attempt_q}' orient={orientation} need={need}")
+        try:
+            resp = requests.get("https://pixabay.com/api/", params=params, timeout=15)
+            if resp.status_code != 200:
+                print(f"[PIXABAY] HTTP {resp.status_code}")
+                continue
+            hits = resp.json().get("hits", [])
+            print(f"[PIXABAY] 결과: {len(hits)}개")
+            for hit in hits:
+                if len(img_paths) >= count:
+                    break
+                img_url = hit.get("largeImageURL") or hit.get("webformatURL", "")
+                if not img_url:
+                    continue
+                img_path = os.path.join(IMAGES_DIR, f"pixabay_{ts}_{len(img_paths)}.jpg")
+                try:
+                    ir = requests.get(img_url, timeout=20, stream=True)
+                    if ir.status_code == 200:
+                        with open(img_path, "wb") as f:
+                            for chunk in ir.iter_content(8192):
+                                f.write(chunk)
+                        size = os.path.getsize(img_path)
+                        if size > 5000:
+                            img_paths.append(img_path)
+                            print(f"[PIXABAY] {len(img_paths)}번: {size//1024}KB")
+                        else:
+                            os.remove(img_path)
+                except Exception as e:
+                    print(f"[PIXABAY] 다운로드 실패: {e}")
+        except Exception as e:
+            print(f"[PIXABAY] 요청 실패: {e}")
+
+    print(f"[PIXABAY] 최종 {len(img_paths)}개 준비")
+    return img_paths
+
+
+def _download_images_by_slides(slide_keywords: list) -> list:
+    """슬라이드별 키워드로 각각 다른 이미지 다운로드 (Unsplash → Pixabay 폴백)."""
+    img_paths = []
+    for i, kw in enumerate(slide_keywords):
+        query = kw if isinstance(kw, str) else " ".join(kw)
+        imgs = _download_unsplash_images([query], count=1)
+        if not imgs:
+            imgs = _download_pixabay_images([query], count=1)
+        if imgs:
+            img_paths.extend(imgs)
+            print(f"[SLIDE] {i+1}/{len(slide_keywords)}: '{query}' → {len(imgs)}장")
+        else:
+            print(f"[SLIDE] {i+1}/{len(slide_keywords)}: '{query}' → 없음 (스킵)")
+    return img_paths
+
+
 def _split_narration_subtitles(text: str, n_slides: int) -> list:
     """영어 나레이션을 문장 단위로 분리해 슬라이드 수에 맞게 배정."""
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
@@ -732,9 +816,22 @@ def create_viral_shorts(content_data: dict, job_id: str = ""):
         narr_en   = content_data.get("narration_en", "") or _ascii_only(narration) or "AI Content"
         keywords  = content_data.get("keywords", [title_en])
 
-        # ── 1. Unsplash 이미지 다운로드 (8개로 증가 → 더 다양한 장면) ──────────
-        img_paths = _download_unsplash_images(keywords, count=8)
-        _jlog(f"[VIRAL] 이미지 {len(img_paths)}개 다운로드됨")
+        # ── 1. 이미지 다운로드: 슬라이드별 키워드 매칭 ─────────────────────
+        slide_keywords = content_data.get("slide_keywords", [])
+        keywords       = content_data.get("keywords", [title_en])
+        if slide_keywords and len(slide_keywords) >= 4:
+            # 슬라이드별 키워드로 각각 다른 이미지 검색
+            img_paths = _download_images_by_slides(slide_keywords)
+            _jlog(f"[VIRAL] 슬라이드 매칭 이미지 {len(img_paths)}개")
+        else:
+            # 폴백: 공통 키워드로 일괄 검색
+            img_paths = _download_unsplash_images(keywords, count=8)
+            _jlog(f"[VIRAL] Unsplash(공통) {len(img_paths)}개")
+            if len(img_paths) < 8:
+                pix = _download_pixabay_images(keywords, count=8 - len(img_paths))
+                img_paths += pix
+                if pix:
+                    _jlog(f"[VIRAL] Pixabay 보충 {len(pix)}개")
         if len(img_paths) < 2:
             _jlog(f"[VIRAL] ❌ 이미지 부족({len(img_paths)}개) → create_simple_video 폴백")
             return create_simple_video(content_data)
@@ -1340,12 +1437,13 @@ def video_package_json():
   "title_en": "English title (max 35 chars, ASCII only)",
   "description": "YouTube 설명 (200자 이내, 핵심 키워드 + 해시태그 3개 포함)",
   "tags": ["태그1", "태그2", "태그3", "태그4", "태그5", "태그6", "태그7"],
-  "keywords": ["english keyword1", "keyword2", "keyword3"],
   "narration": "훅→핵심→CTA 구조 나레이션 (130~150자, 한국어, 반드시 150자 이하, 숫자/구체적 사례 포함)",
-  "narration_en": "Hook->info->CTA in English (max 180 chars, ASCII only, punchy)"
+  "narration_en": "Hook->info->CTA in English (max 180 chars, ASCII only, punchy)",
+  "slide_keywords": ["slide1 visual scene", "slide2 visual", "slide3 visual", "slide4 visual", "slide5 visual", "slide6 visual", "slide7 visual", "slide8 visual"]
 }}
 
-keywords는 Unsplash 이미지 검색용 영어 키워드 2~3개.
+slide_keywords: 나레이션 흐름에 맞는 슬라이드별 Unsplash/Pixabay 검색용 영어 키워드 8개.
+각 키워드는 그 장면에서 보여줄 이미지를 구체적으로 묘사 (예: "stressed office worker", "AI chatbot screen", "money growth chart", "person celebrating success").
 JSON 외 텍스트 절대 금지!
 """
     print("[INFO] video_package_json: AI 요청 중...")
@@ -1981,6 +2079,7 @@ def debug():
     return jsonify({
         "version":               "v28-quality",
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
+        "pixabay_key_set":       bool(os.getenv("PIXABAY_API_KEY")),
         "pexels_key_set":        bool(os.getenv("PEXELS_API_KEY")),
         "elevenlabs_key_set":    bool(os.getenv("ELEVENLABS_API_KEY")),
         "naver_tts_key_set":     bool(os.getenv("NAVER_CLIENT_ID") and os.getenv("NAVER_CLIENT_SECRET")),
