@@ -69,18 +69,27 @@ for _dir in [PROJECTS_DIR, VIDEOS_DIR, AUDIO_DIR, IMAGES_DIR, DATA_DIR]:
     os.makedirs(_dir, exist_ok=True)
 
 # ── 한국어 폰트 자동 다운로드 (Render 서버 시작 시) ─────────────────────────
-_NANUM_LOCAL = os.path.join(os.path.dirname(__file__), "projects", "NanumGothicBold.ttf")
-_NANUM_URL   = "https://github.com/naver/nanumfont/raw/master/fonts/NanumGothicBold.ttf"
+_NANUM_LOCAL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "projects", "NanumGothicBold.ttf")
+_FONT_URLS = [
+    "https://cdn.jsdelivr.net/npm/nanum-gothic/fonts/NanumGothicBold.ttf",
+    "https://github.com/naver/nanumfont/raw/main/fonts/NanumGothicBold.ttf",
+    "https://github.com/naver/nanumfont/raw/master/fonts/NanumGothicBold.ttf",
+]
 
 if not os.path.exists(_NANUM_LOCAL):
-    try:
-        import urllib.request
-        os.makedirs(os.path.dirname(_NANUM_LOCAL), exist_ok=True)
-        urllib.request.urlretrieve(_NANUM_URL, _NANUM_LOCAL)
-        size = os.path.getsize(_NANUM_LOCAL)
-        print(f"[FONT] NanumGothicBold.ttf 다운로드 완료 ({size//1024}KB)")
-    except Exception as _fe:
-        print(f"[FONT] 폰트 다운로드 실패: {_fe}")
+    import urllib.request as _ur
+    for _url in _FONT_URLS:
+        try:
+            _ur.urlretrieve(_url, _NANUM_LOCAL)
+            _sz = os.path.getsize(_NANUM_LOCAL)
+            if _sz > 100_000:
+                print(f"[FONT] 다운로드 완료: {_url.split('/')[-2]} ({_sz//1024}KB)")
+                break
+            os.remove(_NANUM_LOCAL)
+        except Exception as _fe:
+            print(f"[FONT] 실패 ({_url.split('/')[2]}): {_fe}")
+    else:
+        print("[FONT] 모든 URL 실패 → ASCII 폴백 사용")
 
 # ── 자체 학습 시스템: viral_patterns.json 로드 ────────────────────────────────
 _VIRAL_PATTERNS_FILE = os.path.join(DATA_DIR, "viral_patterns.json")
