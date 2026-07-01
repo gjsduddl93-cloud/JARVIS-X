@@ -68,20 +68,19 @@ DATA_DIR     = "data"
 for _dir in [PROJECTS_DIR, VIDEOS_DIR, AUDIO_DIR, IMAGES_DIR, DATA_DIR]:
     os.makedirs(_dir, exist_ok=True)
 
-# ── 한국어 폰트 자동 설치 (Render 서버 시작 시) ──────────────────────────────
-_NANUM_PATH = "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"
-if not os.path.exists(_NANUM_PATH):
+# ── 한국어 폰트 자동 다운로드 (Render 서버 시작 시) ─────────────────────────
+_NANUM_LOCAL = os.path.join(os.path.dirname(__file__), "projects", "NanumGothicBold.ttf")
+_NANUM_URL   = "https://github.com/naver/nanumfont/raw/master/fonts/NanumGothicBold.ttf"
+
+if not os.path.exists(_NANUM_LOCAL):
     try:
-        _r = subprocess.run(
-            ["apt-get", "install", "-y", "--no-install-recommends", "fonts-nanum"],
-            capture_output=True, timeout=60
-        )
-        if _r.returncode == 0:
-            print("[FONT] fonts-nanum 설치 완료")
-        else:
-            print(f"[FONT] apt-get 실패: {_r.stderr.decode()[:200]}")
+        import urllib.request
+        os.makedirs(os.path.dirname(_NANUM_LOCAL), exist_ok=True)
+        urllib.request.urlretrieve(_NANUM_URL, _NANUM_LOCAL)
+        size = os.path.getsize(_NANUM_LOCAL)
+        print(f"[FONT] NanumGothicBold.ttf 다운로드 완료 ({size//1024}KB)")
     except Exception as _fe:
-        print(f"[FONT] 폰트 설치 실패: {_fe}")
+        print(f"[FONT] 폰트 다운로드 실패: {_fe}")
 
 # ── 자체 학습 시스템: viral_patterns.json 로드 ────────────────────────────────
 _VIRAL_PATTERNS_FILE = os.path.join(DATA_DIR, "viral_patterns.json")
@@ -244,13 +243,12 @@ def ask_ai(user_prompt, max_tokens=1024, prefer_claude=True):
 
 
 def _find_korean_font():
-    """시스템에서 한글 지원 폰트 경로 반환. 없으면 None."""
+    """한글 지원 폰트 경로 반환. 없으면 None."""
     candidates = [
+        _NANUM_LOCAL,  # 로컬 다운로드 우선
         "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
         "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
         "/usr/share/fonts/truetype/nanum/NanumBarunGothicBold.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "C:/Windows/Fonts/malgun.ttf",
     ]
     for fp in candidates:
