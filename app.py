@@ -68,28 +68,8 @@ DATA_DIR     = "data"
 for _dir in [PROJECTS_DIR, VIDEOS_DIR, AUDIO_DIR, IMAGES_DIR, DATA_DIR]:
     os.makedirs(_dir, exist_ok=True)
 
-# ── 한국어 폰트 자동 다운로드 (Render 서버 시작 시) ─────────────────────────
-_NANUM_LOCAL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "projects", "NanumGothicBold.ttf")
-_FONT_URLS = [
-    "https://cdn.jsdelivr.net/npm/nanum-gothic/fonts/NanumGothicBold.ttf",
-    "https://github.com/naver/nanumfont/raw/main/fonts/NanumGothicBold.ttf",
-    "https://github.com/naver/nanumfont/raw/master/fonts/NanumGothicBold.ttf",
-]
-
-if not os.path.exists(_NANUM_LOCAL):
-    import urllib.request as _ur
-    for _url in _FONT_URLS:
-        try:
-            _ur.urlretrieve(_url, _NANUM_LOCAL)
-            _sz = os.path.getsize(_NANUM_LOCAL)
-            if _sz > 100_000:
-                print(f"[FONT] 다운로드 완료: {_url.split('/')[-2]} ({_sz//1024}KB)")
-                break
-            os.remove(_NANUM_LOCAL)
-        except Exception as _fe:
-            print(f"[FONT] 실패 ({_url.split('/')[2]}): {_fe}")
-    else:
-        print("[FONT] 모든 URL 실패 → ASCII 폴백 사용")
+# ── 한국어 폰트 경로 (repo 내 fonts/ 폴더) ───────────────────────────────────
+_NANUM_LOCAL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts", "NanumGothicBold.ttf")
 
 # ── 자체 학습 시스템: viral_patterns.json 로드 ────────────────────────────────
 _VIRAL_PATTERNS_FILE = os.path.join(DATA_DIR, "viral_patterns.json")
@@ -254,7 +234,7 @@ def ask_ai(user_prompt, max_tokens=1024, prefer_claude=True):
 def _find_korean_font():
     """한글 지원 폰트 경로 반환. 없으면 None."""
     candidates = [
-        _NANUM_LOCAL,  # 로컬 다운로드 우선
+        _NANUM_LOCAL,  # repo 내 fonts/ 폴더 우선
         "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
         "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
         "/usr/share/fonts/truetype/nanum/NanumBarunGothicBold.ttf",
