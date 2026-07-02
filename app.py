@@ -1419,31 +1419,41 @@ def video_package_json():
 
     prompt = f"""
 유튜브 쇼츠용 30~45초 영상 데이터를 JSON으로 생성해줘.
-이 채널(@future.minute-ai)은 AI 자동화로 수익 내는 방법을 알려주는 채널이다.
-현재 연도: {current_year}년 (제목/나레이션에 연도 언급 시 반드시 {current_year}년 사용)
+이 채널(@future.minute-ai)은 AI 자동화로 실제 수익을 낸 사람들의 이야기를 다룬다.
+현재 연도: {current_year}년 (연도 언급 시 반드시 {current_year}년 사용)
 
 오늘의 카테고리: [{category}]
 핵심 키워드: {kw_sample}
 {learned_hint}
 {meta_hook_instruction}
-【나레이션 필수 구조 — 이 순서를 반드시 지킬 것】
-1줄(훅): 충격적 사실 또는 "이거 모르면 손해" 식 첫 문장 (시청자가 3초 안에 멈추게)
-2~4줄(핵심): 구체적 정보 or 방법 (숫자, 사례 포함)
-5줄(CTA): "저장해두세요" or "알림 설정하면 매일 AI 자동화 꿀팁 드려요"
+【스토리텔링 나레이션 구조 — 반드시 이 말투와 순서로】
+말투: "~이 있었음", "~했음", "~됐음" (과거형 스토리텔링, 실제 있었던 일처럼)
+1줄(훅): 극적 반전 설정. 결말은 절대 말하지 말 것. 궁금증만 남기기.
+  예시: "AI 하나로 월급보다 더 번 직장인이 있었음"
+  예시: "대기업 다니다 AI 자동화로 퇴사한 사람 있었음"
+2~3줄(전개): 구체적 상황·숫자·과정 묘사 (어떻게 했는지)
+4줄(반전/결과): 예상 못한 결과 또는 핵심 인사이트
+5줄(CTA): "알림 설정하면 이런 사람들 이야기 매일 올려드림"
+
+【제목 규칙】
+- 결론을 제목에 쓰지 말 것
+- 궁금증만 남기는 구조: "~한 사람 있었음" or "~했더니 생긴 일"
+- 이모지 1개만 (❌ 금지, 대신 🤖💰⚡ 등 활용)
+- 20자 이내
 
 반드시 이 JSON만 반환:
 {{
-  "title": "한국어 제목 (25자 이내, ❌/숫자/이모지 활용, 클릭 유도)",
+  "title": "한국어 제목 (20자 이내, 궁금증 유발, 결론 노출 금지)",
   "title_en": "English title (max 35 chars, ASCII only)",
   "description": "YouTube 설명 (200자 이내, 핵심 키워드 + 해시태그 3개 포함)",
   "tags": ["태그1", "태그2", "태그3", "태그4", "태그5", "태그6", "태그7"],
-  "narration": "훅→핵심→CTA 구조 나레이션 (130~150자, 한국어, 반드시 150자 이하, 숫자/구체적 사례 포함)",
-  "narration_en": "Hook->info->CTA in English (max 180 chars, ASCII only, punchy)",
+  "narration": "스토리텔링 나레이션 (120~140자, 한국어, ~이 있었음 말투, 숫자/구체적 상황 포함, 결말에 반전)",
+  "narration_en": "Story-style narration in English (max 180 chars, past tense, punchy ending)",
   "slide_keywords": ["slide1 visual scene", "slide2 visual", "slide3 visual", "slide4 visual", "slide5 visual", "slide6 visual", "slide7 visual", "slide8 visual"]
 }}
 
-slide_keywords: 나레이션 흐름에 맞는 슬라이드별 Unsplash/Pixabay 검색용 영어 키워드 8개.
-각 키워드는 그 장면에서 보여줄 이미지를 구체적으로 묘사 (예: "stressed office worker", "AI chatbot screen", "money growth chart", "person celebrating success").
+slide_keywords: 나레이션 장면별 Unsplash/Pixabay 검색 영어 키워드 8개.
+각 키워드는 그 장면을 구체적으로 묘사 (예: "stressed office worker laptop", "person counting money excited", "AI robot working computer").
 JSON 외 텍스트 절대 금지!
 """
     print("[INFO] video_package_json: AI 요청 중...")
