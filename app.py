@@ -866,10 +866,10 @@ def create_viral_shorts(content_data: dict, job_id: str = ""):
         aud_enc = ["-c:a", "aac", "-b:a", "128k"]
 
         # ── 5. Pexels 클립 준비: slide_keywords 사용해 5개 다른 장면 ─────
-        _jlog("[VIRAL] Pexels 클립 준비 시작")
+        _jlog("[VIRAL] 영상 클립 준비 시작 (Coverr 우선 → Pexels 폴백)")
         clip_kw = slide_keywords[3:] if len(slide_keywords) > 3 else (slide_keywords or keywords)
         pexels_clips = _fetch_pexels_clips(clip_kw, clip_sec=IMG_DUR, max_clips=5)
-        _jlog(f"[VIRAL] Pexels 클립: {len(pexels_clips)}개")
+        _jlog(f"[VIRAL] 클립 준비 완료: {len(pexels_clips)}개")
 
         # ── 5b. concat 리스트: 이미지 1장 → 클립 2개 → 이미지 1장 → 클립 3개
         concat_txt  = os.path.join(IMAGES_DIR, f"concat_{ts}.txt")
@@ -1931,11 +1931,17 @@ def _download_one_coverr_clip(query: str, clip_sec: float, clip_path: str, raw_p
         )
         if resp.status_code != 200:
             return False
-        hits = resp.json().get("hits", [])
+        data = resp.json()
+        hits = data.get("hits", [])
         if not hits:
+            print(f"[WARN] [COVERR] '{query}' 검색결과 없음, status={resp.status_code}")
             return False
-        video_url = hits[0].get("url") or hits[0].get("mp4_url") or ""
-        if not video_url:
+        hit = hits[0]
+        # Coverr API v2: mp4Url (camelCase), 없으면 url 필드 시도
+        video_url = hit.get("mp4Url") or hit.get("mp4_url") or hit.get("url") or ""
+        # url 필드가 웹페이지 URL인 경우 스킵 (coverr.co/videos/... 형태)
+        if not video_url or ("coverr.co/videos" in video_url and not video_url.endswith(".mp4")):
+            print(f"[WARN] [COVERR] '{query}' 다운로드 URL 없음, keys={list(hit.keys())}")
             return False
         dl = requests.get(video_url, timeout=30, stream=True)
         if dl.status_code != 200:
