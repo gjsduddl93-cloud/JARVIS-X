@@ -1902,9 +1902,67 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
             clips.append(clip_path)
             print(f"[INFO] [PEXELS] ✅ 클립 준비: {clip_path}")
         else:
-            print(f"[WARN] [PEXELS] '{query}' 실패, 스킵")
+            print(f"[WARN] [PEXELS] '{query}' 실패 → Coverr 폴백 시도")
+            coverr_key = os.getenv("COVERR_API_KEY", "").strip()
+            coverr_raw  = os.path.join(IMAGES_DIR, f"coverr_raw_{ts}_{idx}.mp4")
+            coverr_clip = os.path.join(IMAGES_DIR, f"coverr_clip_{ts}_{idx}.mp4")
+            if coverr_key and _download_one_coverr_clip(query, clip_sec, coverr_clip, coverr_raw, coverr_key):
+                clips.append(coverr_clip)
+                print(f"[INFO] [COVERR] ✅ 폴백 클립 준비: {coverr_clip}")
+            else:
+                print(f"[WARN] [COVERR] '{query}' 폴백도 실패, 스킵")
 
     return clips
+
+
+def _download_one_coverr_clip(query: str, clip_sec: float, clip_path: str, raw_path: str, api_key: str) -> bool:
+    """Coverr API로 단일 클립 다운로드·전처리. 성공 시 True."""
+    try:
+        resp = requests.get(
+            "https://api.coverr.co/videos",
+            headers={"X-Api-Key": api_key},
+            params={"keywords": query, "limit": 3},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return False
+        hits = resp.json().get("hits", [])
+        if not hits:
+            return False
+        video_url = hits[0].get("url") or hits[0].get("mp4_url") or ""
+        if not video_url:
+            return False
+        dl = requests.get(video_url, timeout=30, stream=True)
+        if dl.status_code != 200:
+            return False
+        with open(raw_path, "wb") as f:
+            for chunk in dl.iter_content(65536):
+                f.write(chunk)
+        if os.path.getsize(raw_path) < 10000:
+            return False
+    except Exception as e:
+        print("[WARN]", f"[COVERR] 다운로드 실패 '{query}': {e}")
+        return False
+
+    cmd = [
+        "ffmpeg", "-y", "-ss", "0", "-i", raw_path,
+        "-t", str(clip_sec),
+        "-vf", (
+            "scale=1620:2880:force_original_aspect_ratio=increase,"
+            "crop=1080:1920,"
+            "eq=brightness=0.15:contrast=1.2:saturation=1.7,"
+            "format=yuv420p"
+        ),
+        "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30", "-threads", "1",
+        clip_path,
+    ]
+    log_p = clip_path.replace(".mp4", ".log")
+    _run_ffmpeg(cmd, log_p, timeout=60)
+    try:
+        os.remove(raw_path)
+    except Exception:
+        pass
+    return os.path.exists(clip_path) and os.path.getsize(clip_path) > 5000
 
 
 def _fetch_pexels_clips_legacy(keywords: list, clip_sec: float = 5.5, max_clips: int = 2) -> list:
@@ -2177,6 +2235,7 @@ def debug():
         "unsplash_key_set":      bool(os.getenv("UNSPLASH_API_KEY")),
         "pixabay_key_set":       bool(os.getenv("PIXABAY_API_KEY")),
         "pexels_key_set":        bool(os.getenv("PEXELS_API_KEY")),
+        "coverr_key_set":        bool(os.getenv("COVERR_API_KEY")),
         "elevenlabs_key_set":    bool(os.getenv("ELEVENLABS_API_KEY")),
         "naver_tts_key_set":     bool(os.getenv("NAVER_CLIENT_ID") and os.getenv("NAVER_CLIENT_SECRET")),
         "anthropic_key_set":     bool(os.getenv("ANTHROPIC_API_KEY")),
