@@ -1874,20 +1874,19 @@ def _download_one_pexels_clip(query: str, clip_sec: float, clip_path: str, raw_p
 
 def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 5) -> list:
     """
-    Pexels에서 영상 URL 가져와 clip_sec짜리 세로(1080×1920) 클립으로 전처리.
+    Coverr 우선 → Pexels 폴백으로 클립 수집.
     keywords 리스트에서 키워드별로 각각 다른 장면 검색 (다양성 확보).
-    PEXELS_API_KEY 없으면 빈 리스트 반환.
+    둘 다 없으면 빈 리스트 반환.
     """
-    api_key = os.getenv("PEXELS_API_KEY", "").strip()
-    if not api_key:
+    coverr_key = os.getenv("COVERR_API_KEY", "").strip()
+    pexels_key = os.getenv("PEXELS_API_KEY", "").strip()
+    if not coverr_key and not pexels_key:
         return []
 
     ts    = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     clips = []
 
-    # 키워드별로 각각 1개씩 검색 (다른 장면)
     queries = [str(k) for k in keywords] if keywords else ["technology", "business", "people"]
-    # 키워드 부족하면 폴백 쿼리 보충
     fallbacks = ["office work", "city life", "success business", "technology future", "people working"]
     while len(queries) < max_clips:
         queries.append(fallbacks[len(queries) % len(fallbacks)])
@@ -1895,22 +1894,28 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
     for idx, query in enumerate(queries[:max_clips]):
         if len(clips) >= max_clips:
             break
-        raw_path  = os.path.join(IMAGES_DIR, f"pexels_raw_{ts}_{idx}.mp4")
-        clip_path = os.path.join(IMAGES_DIR, f"pexels_clip_{ts}_{idx}.mp4")
-        print(f"[INFO] [PEXELS] 클립 {idx+1}/{max_clips}: '{query}'")
-        if _download_one_pexels_clip(query, clip_sec, clip_path, raw_path, api_key):
-            clips.append(clip_path)
-            print(f"[INFO] [PEXELS] ✅ 클립 준비: {clip_path}")
-        else:
-            print(f"[WARN] [PEXELS] '{query}' 실패 → Coverr 폴백 시도")
-            coverr_key = os.getenv("COVERR_API_KEY", "").strip()
-            coverr_raw  = os.path.join(IMAGES_DIR, f"coverr_raw_{ts}_{idx}.mp4")
-            coverr_clip = os.path.join(IMAGES_DIR, f"coverr_clip_{ts}_{idx}.mp4")
-            if coverr_key and _download_one_coverr_clip(query, clip_sec, coverr_clip, coverr_raw, coverr_key):
-                clips.append(coverr_clip)
-                print(f"[INFO] [COVERR] ✅ 폴백 클립 준비: {coverr_clip}")
-            else:
-                print(f"[WARN] [COVERR] '{query}' 폴백도 실패, 스킵")
+
+        clip_path = os.path.join(IMAGES_DIR, f"clip_{ts}_{idx}.mp4")
+        raw_path  = os.path.join(IMAGES_DIR, f"clip_raw_{ts}_{idx}.mp4")
+
+        # 1순위: Coverr (동적 감성 영상)
+        if coverr_key:
+            print(f"[INFO] [COVERR] 클립 {idx+1}/{max_clips}: '{query}'")
+            if _download_one_coverr_clip(query, clip_sec, clip_path, raw_path, coverr_key):
+                clips.append(clip_path)
+                print(f"[INFO] [COVERR] OK: {clip_path}")
+                continue
+            print(f"[WARN] [COVERR] '{query}' 실패 → Pexels 폴백")
+
+        # 2순위: Pexels
+        if pexels_key:
+            print(f"[INFO] [PEXELS] 폴백 클립: '{query}'")
+            if _download_one_pexels_clip(query, clip_sec, clip_path, raw_path, pexels_key):
+                clips.append(clip_path)
+                print(f"[INFO] [PEXELS] OK: {clip_path}")
+                continue
+
+        print(f"[WARN] '{query}' Coverr+Pexels 모두 실패, 스킵")
 
     return clips
 
