@@ -2,11 +2,11 @@ name: Daily Viral Shorts (15개/일)
 
 on:
   schedule:
-    - cron: '0 0 * * *'   # 09:00 KST
-    - cron: '0 3 * * *'   # 12:00 KST
-    - cron: '0 6 * * *'   # 15:00 KST
-    - cron: '0 9 * * *'   # 18:00 KST
-    - cron: '0 12 * * *'  # 21:00 KST
+    - cron: '0 2 * * *'   # 11:00 KST
+    - cron: '0 5 * * *'   # 14:00 KST
+    - cron: '0 8 * * *'   # 17:00 KST
+    - cron: '0 11 * * *'  # 20:00 KST
+    - cron: '0 14 * * *'  # 23:00 KST
   workflow_dispatch:       # 수동 실행
 
 jobs:
