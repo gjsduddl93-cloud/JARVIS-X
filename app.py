@@ -1943,12 +1943,16 @@ def _download_one_coverr_clip(query: str, clip_sec: float, clip_path: str, raw_p
         if not video_url or ("coverr.co/videos" in video_url and not video_url.endswith(".mp4")):
             print(f"[WARN] [COVERR] '{query}' 다운로드 URL 없음, keys={list(hit.keys())}")
             return False
-        dl = requests.get(video_url, timeout=30, stream=True)
+        dl = requests.get(video_url, timeout=20, stream=True)
         if dl.status_code != 200:
             return False
+        size = 0
         with open(raw_path, "wb") as f:
             for chunk in dl.iter_content(65536):
                 f.write(chunk)
+                size += len(chunk)
+                if size > 30 * 1024 * 1024:  # 30MB 초과 시 중단
+                    break
         if os.path.getsize(raw_path) < 10000:
             return False
     except Exception as e:
