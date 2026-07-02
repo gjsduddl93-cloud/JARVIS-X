@@ -1430,29 +1430,29 @@ def video_package_json():
 핵심 키워드: {kw_sample}
 {learned_hint}
 {meta_hook_instruction}
-【스토리텔링 나레이션 구조 — 반드시 이 말투와 순서로】
-말투: "~이 있었음", "~했음", "~됐음" (과거형 스토리텔링, 실제 있었던 일처럼)
-1줄(훅): 극적 반전 설정. 결말은 절대 말하지 말 것. 궁금증만 남기기.
-  예시: "AI 하나로 월급보다 더 번 직장인이 있었음"
-  예시: "대기업 다니다 AI 자동화로 퇴사한 사람 있었음"
-2~3줄(전개): 구체적 상황·숫자·과정 묘사 (어떻게 했는지)
-4줄(반전/결과): 예상 못한 결과 또는 핵심 인사이트
-5줄(CTA): "알림 설정하면 이런 사람들 이야기 매일 올려드림"
+【나레이션 구조 — 반드시 이 말투와 순서로】
+말투: 존댓말 + 과장 리액션. "~요", "~어요", "~네요" + 감탄사(와/오/대박/미쳤어요) + 질문형
+1줄(훅): 감탄사로 시작 + 충격 사실 또는 질문
+  예시: "와, 진짜 미쳤어요! 이거 봤어요?"
+  예시: "오 대박! 이걸 AI가 다 한다고요?"
+  예시: "완전 신기하네요! 이 방법 아직 모르세요?"
+2~3줄(핵심): 구체적인 숫자·방법 + 리액션 섞기 (예: "진짜로요!", "믿기지 않죠?")
+4줄(인사이트): 강한 감탄 + 핵심 한 줄 정리
+5줄(CTA): "알림 설정하시면 매일 이런 꿀팁 드려요!"
 
 【제목 규칙】
-- 결론을 제목에 쓰지 말 것
-- 궁금증만 남기는 구조: "~한 사람 있었음" or "~했더니 생긴 일"
+- 궁금증 유발 또는 혜택 명시 구조
 - 이모지 1개만 (❌ 금지, 대신 🤖💰⚡ 등 활용)
 - 20자 이내
 
 반드시 이 JSON만 반환:
 {{
-  "title": "한국어 제목 (20자 이내, 궁금증 유발, 결론 노출 금지)",
+  "title": "한국어 제목 (20자 이내, 클릭 유도)",
   "title_en": "English title (max 35 chars, ASCII only)",
   "description": "YouTube 설명 (200자 이내, 핵심 키워드 + 해시태그 3개 포함)",
   "tags": ["태그1", "태그2", "태그3", "태그4", "태그5", "태그6", "태그7"],
-  "narration": "스토리텔링 나레이션 (120~140자, 한국어, ~이 있었음 말투, 숫자/구체적 상황 포함, 결말에 반전)",
-  "narration_en": "Story-style narration in English (max 180 chars, past tense, punchy ending)",
+  "narration": "과장 리액션 나레이션 (120~140자, 한국어, 감탄사+존댓말, 와/오/대박/미쳤어요 포함, 숫자/구체적 방법 포함)",
+  "narration_en": "Excited reaction narration in English (max 180 chars, wow/amazing/unbelievable + actionable tips)",
   "slide_keywords": ["slide1 visual scene", "slide2 visual", "slide3 visual", "slide4 visual", "slide5 visual", "slide6 visual", "slide7 visual", "slide8 visual"]
 }}
 
