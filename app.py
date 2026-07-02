@@ -816,24 +816,22 @@ def create_viral_shorts(content_data: dict, job_id: str = ""):
         narr_en   = content_data.get("narration_en", "") or _ascii_only(narration) or "AI Content"
         keywords  = content_data.get("keywords", [title_en])
 
-        # ── 1. 이미지 다운로드: 슬라이드별 키워드 매칭 ─────────────────────
+        # ── 1. 이미지 3장 + Pexels 클립 5개 (영상 비중 확대) ──────────────
         slide_keywords = content_data.get("slide_keywords", [])
         keywords       = content_data.get("keywords", [title_en])
-        if slide_keywords and len(slide_keywords) >= 4:
-            # 슬라이드별 키워드로 각각 다른 이미지 검색
-            img_paths = _download_images_by_slides(slide_keywords)
-            _jlog(f"[VIRAL] 슬라이드 매칭 이미지 {len(img_paths)}개")
-        else:
-            # 폴백: 공통 키워드로 일괄 검색
-            img_paths = _download_unsplash_images(keywords, count=8)
-            _jlog(f"[VIRAL] Unsplash(공통) {len(img_paths)}개")
-            if len(img_paths) < 8:
-                pix = _download_pixabay_images(keywords, count=8 - len(img_paths))
-                img_paths += pix
-                if pix:
-                    _jlog(f"[VIRAL] Pixabay 보충 {len(pix)}개")
-        if len(img_paths) < 2:
-            _jlog(f"[VIRAL] ❌ 이미지 부족({len(img_paths)}개) → create_simple_video 폴백")
+
+        # 이미지: 3장만 (훅·배경용)
+        img_kw = slide_keywords[:3] if slide_keywords else keywords
+        img_paths = _download_images_by_slides(img_kw[:3]) if img_kw else []
+        if len(img_paths) < 3:
+            extra = _download_unsplash_images(keywords, count=3 - len(img_paths))
+            if not extra:
+                extra = _download_pixabay_images(keywords, count=3 - len(img_paths))
+            img_paths += extra
+        _jlog(f"[VIRAL] 이미지 {len(img_paths)}장")
+
+        if len(img_paths) < 1:
+            _jlog(f"[VIRAL] ❌ 이미지 0개 → create_simple_video 폴백")
             return create_simple_video(content_data)
 
         n       = len(img_paths)
@@ -867,20 +865,26 @@ def create_viral_shorts(content_data: dict, job_id: str = ""):
                    "-crf", "23", "-pix_fmt", "yuv420p", "-threads", "2"]
         aud_enc = ["-c:a", "aac", "-b:a", "128k"]
 
-        # ── 5. Pexels 클립 준비 (PEXELS_API_KEY 있으면) ─────────────────────
+        # ── 5. Pexels 클립 준비: slide_keywords 사용해 5개 다른 장면 ─────
         _jlog("[VIRAL] Pexels 클립 준비 시작")
-        pexels_clips = _fetch_pexels_clips(keywords, clip_sec=IMG_DUR, max_clips=2)
+        clip_kw = slide_keywords[3:] if len(slide_keywords) > 3 else (slide_keywords or keywords)
+        pexels_clips = _fetch_pexels_clips(clip_kw, clip_sec=IMG_DUR, max_clips=5)
         _jlog(f"[VIRAL] Pexels 클립: {len(pexels_clips)}개")
 
-        # ── 5b. concat 파일 리스트 생성 (이미지 + Pexels 클립 혼합) ─────────
-        # 전체 슬라이드 리스트: 이미지 3장마다 Pexels 클립 1개 삽입
+        # ── 5b. concat 리스트: 이미지 1장 → 클립 2개 → 이미지 1장 → 클립 3개
         concat_txt  = os.path.join(IMAGES_DIR, f"concat_{ts}.txt")
         slide_items = []  # (path, is_video)
         clip_q      = list(pexels_clips)
-        for i, ip in enumerate(img_paths):
-            slide_items.append((os.path.abspath(ip), False))
-            if clip_q and (i + 1) % 3 == 0:
-                slide_items.append((os.path.abspath(clip_q.pop(0)), True))
+        img_q       = list(img_paths)
+
+        # 이미지와 클립을 교대로 배치 (클립 비중 높게)
+        while img_q or clip_q:
+            if img_q:
+                slide_items.append((os.path.abspath(img_q.pop(0)), False))
+            # 클립 1~2개 연속 삽입
+            for _ in range(2):
+                if clip_q:
+                    slide_items.append((os.path.abspath(clip_q.pop(0)), True))
         n = len(slide_items)  # 자막 수 재계산
 
         with open(concat_txt, "w") as f:
@@ -1817,11 +1821,94 @@ def get_pexels_videos(keyword: str, count: int = 5) -> list:
     return []
 
 
-def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 2) -> list:
+def _download_one_pexels_clip(query: str, clip_sec: float, clip_path: str, raw_path: str, api_key: str) -> bool:
+    """단일 쿼리로 Pexels 클립 1개 다운로드·전처리. 성공 시 True."""
+    try:
+        resp = requests.get(
+            "https://api.pexels.com/videos/search",
+            headers={"Authorization": api_key},
+            params={"query": query, "per_page": 3, "orientation": "portrait"},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return False
+        videos = resp.json().get("videos", [])
+        if not videos:
+            return False
+        files  = videos[0].get("video_files", [])
+        target = next((f for f in files if f.get("quality") == "sd"), files[0] if files else None)
+        if not target:
+            return False
+        dl = requests.get(target["link"], timeout=30, stream=True)
+        if dl.status_code != 200:
+            return False
+        with open(raw_path, "wb") as f:
+            for chunk in dl.iter_content(65536):
+                f.write(chunk)
+        if os.path.getsize(raw_path) < 10000:
+            return False
+    except Exception as e:
+        print("[WARN]", f"[PEXELS] 다운로드 실패 '{query}': {e}")
+        return False
+
+    cmd = [
+        "ffmpeg", "-y", "-ss", "0", "-i", raw_path,
+        "-t", str(clip_sec),
+        "-vf", (
+            "scale=1620:2880:force_original_aspect_ratio=increase,"
+            "crop=1080:1920,"
+            "eq=brightness=0.15:contrast=1.2:saturation=1.7,"
+            "format=yuv420p"
+        ),
+        "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30", "-threads", "1",
+        clip_path,
+    ]
+    log_p = clip_path.replace(".mp4", ".log")
+    _run_ffmpeg(cmd, log_p, timeout=60)
+    try:
+        os.remove(raw_path)
+    except Exception:
+        pass
+    return os.path.exists(clip_path) and os.path.getsize(clip_path) > 5000
+
+
+def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 5) -> list:
     """
     Pexels에서 영상 URL 가져와 clip_sec짜리 세로(1080×1920) 클립으로 전처리.
-    PEXELS_API_KEY 없으면 빈 리스트 반환 (이미지 전용 모드로 폴백).
+    keywords 리스트에서 키워드별로 각각 다른 장면 검색 (다양성 확보).
+    PEXELS_API_KEY 없으면 빈 리스트 반환.
     """
+    api_key = os.getenv("PEXELS_API_KEY", "").strip()
+    if not api_key:
+        return []
+
+    ts    = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    clips = []
+
+    # 키워드별로 각각 1개씩 검색 (다른 장면)
+    queries = [str(k) for k in keywords] if keywords else ["technology", "business", "people"]
+    # 키워드 부족하면 폴백 쿼리 보충
+    fallbacks = ["office work", "city life", "success business", "technology future", "people working"]
+    while len(queries) < max_clips:
+        queries.append(fallbacks[len(queries) % len(fallbacks)])
+
+    for idx, query in enumerate(queries[:max_clips]):
+        if len(clips) >= max_clips:
+            break
+        raw_path  = os.path.join(IMAGES_DIR, f"pexels_raw_{ts}_{idx}.mp4")
+        clip_path = os.path.join(IMAGES_DIR, f"pexels_clip_{ts}_{idx}.mp4")
+        print(f"[INFO] [PEXELS] 클립 {idx+1}/{max_clips}: '{query}'")
+        if _download_one_pexels_clip(query, clip_sec, clip_path, raw_path, api_key):
+            clips.append(clip_path)
+            print(f"[INFO] [PEXELS] ✅ 클립 준비: {clip_path}")
+        else:
+            print(f"[WARN] [PEXELS] '{query}' 실패, 스킵")
+
+    return clips
+
+
+def _fetch_pexels_clips_legacy(keywords: list, clip_sec: float = 5.5, max_clips: int = 2) -> list:
+    """레거시: 단일 쿼리로 max_clips개 검색 (하위 호환용)."""
     api_key = os.getenv("PEXELS_API_KEY", "").strip()
     if not api_key:
         return []
@@ -1845,7 +1932,6 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
             if len(clips) >= max_clips:
                 break
             files = v.get("video_files", [])
-            # SD 화질 우선 (용량 작고 빠름)
             target = next((f for f in files if f.get("quality") == "sd"), files[0] if files else None)
             if not target:
                 continue
