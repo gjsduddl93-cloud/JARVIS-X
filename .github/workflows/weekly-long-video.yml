@@ -11,6 +11,9 @@ jobs:
     timeout-minutes: 60
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Wake up Render service
         run: |
           echo "🔔 Render 콜드 스타트 대기 중 (최대 3분)..."
