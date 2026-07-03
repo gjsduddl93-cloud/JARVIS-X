@@ -31,6 +31,7 @@ import re
 import json
 import traceback
 import random
+import math
 import requests
 import subprocess
 
@@ -401,6 +402,20 @@ def _run_ffmpeg(cmd, log_path, timeout=90):
         return rc, "(로그 읽기 실패)"
 
 
+def _ffprobe_duration(path: str) -> float:
+    """미디어 파일 길이(초) 반환. 실패 시 0.0."""
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            capture_output=True, text=True, timeout=15,
+        )
+        return float(out.stdout.strip())
+    except Exception as e:
+        print(f"[FFPROBE] 길이 측정 실패 ({path}): {e}")
+        return 0.0
+
+
 def create_tts_audio(text: str, lang: str = "ko") -> str | None:
     """ElevenLabs → Naver Clova → gTTS 순서로 MP3 생성."""
     # 150자 제한 → 한국어 TTS 약 40~45초 분량 (Shorts 60초 이내)
@@ -500,6 +515,116 @@ def create_tts_audio(text: str, lang: str = "ko") -> str | None:
     except Exception as e:
         print(f"[TTS] gTTS 예외: {e}")
 
+    return None
+
+
+def create_long_tts_audio(text: str, lang: str = "ko") -> str | None:
+    """
+    5~7분 장편 나레이션용 TTS. create_tts_audio()와 달리 150자 하드캡이 없음.
+    문장 경계로 ElevenLabs 안전 청크(~800자)로 나눠 순차 호출 후 하나로 이어붙임.
+    ElevenLabs 실패 시 청크 단위 gTTS 폴백.
+    """
+    full_text = (text or "").strip()
+    if not full_text:
+        return None
+
+    sentences = re.split(r'(?<=[.!?。!?])\s+', full_text)
+    chunks, buf = [], ""
+    for s in sentences:
+        if len(buf) + len(s) + 1 > 800 and buf:
+            chunks.append(buf.strip())
+            buf = s
+        else:
+            buf = f"{buf} {s}".strip()
+    if buf:
+        chunks.append(buf.strip())
+    if not chunks:
+        chunks = [full_text[i:i+800] for i in range(0, len(full_text), 800)]
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    print(f"[LONG-TTS] 나레이션 {len(full_text)}자 → {len(chunks)}개 청크")
+
+    el_key   = os.getenv("ELEVENLABS_API_KEY", "").strip()
+    voice_id = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
+    part_paths = []
+
+    for idx, chunk in enumerate(chunks):
+        part_path = os.path.join(AUDIO_DIR, f"tts_long_{ts}_{idx}.mp3")
+        done = False
+
+        if el_key:
+            try:
+                url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+                payload = {
+                    "text": chunk,
+                    "model_id": "eleven_multilingual_v2",
+                    "voice_settings": {
+                        "stability": 0.60, "similarity_boost": 0.80,
+                        "style": 0.30, "use_speaker_boost": True,
+                    },
+                }
+                headers = {
+                    "xi-api-key": el_key,
+                    "Content-Type": "application/json",
+                    "Accept": "audio/mpeg",
+                }
+                print(f"[LONG-TTS] ElevenLabs 청크 {idx+1}/{len(chunks)} ({len(chunk)}자)")
+                resp = requests.post(url, json=payload, headers=headers, timeout=30)
+                if resp.status_code == 200:
+                    with open(part_path, "wb") as f:
+                        f.write(resp.content)
+                    if os.path.getsize(part_path) > 500:
+                        done = True
+                else:
+                    print(f"[LONG-TTS] ElevenLabs HTTP {resp.status_code}: {resp.text[:200]}")
+            except Exception as e:
+                print(f"[LONG-TTS] ElevenLabs 예외 (청크 {idx+1}): {e}")
+
+        if not done:
+            try:
+                from gtts import gTTS
+                print(f"[LONG-TTS] gTTS 폴백 청크 {idx+1}/{len(chunks)}")
+                gTTS(text=chunk, lang=lang, slow=False).save(part_path)
+                done = os.path.exists(part_path) and os.path.getsize(part_path) > 500
+            except Exception as e:
+                print(f"[LONG-TTS] gTTS 예외 (청크 {idx+1}): {e}")
+
+        if done:
+            part_paths.append(part_path)
+        else:
+            print(f"[LONG-TTS] 청크 {idx+1} 생성 실패 → 스킵")
+
+    if not part_paths:
+        print("[LONG-TTS] 모든 청크 실패")
+        return None
+    if len(part_paths) == 1:
+        return part_paths[0]
+
+    concat_txt = os.path.join(AUDIO_DIR, f"tts_long_concat_{ts}.txt")
+    with open(concat_txt, "w") as f:
+        for p in part_paths:
+            f.write(f"file '{os.path.abspath(p)}'\n")
+
+    merged_path = os.path.join(AUDIO_DIR, f"tts_long_{ts}.mp3")
+    cmd = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt,
+           "-c", "copy", merged_path]
+    rc, _ = _run_ffmpeg(cmd, merged_path.replace(".mp3", ".log"), timeout=60)
+    if rc != 0 or not os.path.exists(merged_path):
+        # -c copy 실패 시 재인코딩 폴백
+        cmd2 = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt,
+                "-c:a", "libmp3lame", "-b:a", "128k", merged_path]
+        _run_ffmpeg(cmd2, merged_path.replace(".mp3", ".log"), timeout=60)
+
+    for p in part_paths:
+        try:
+            os.remove(p)
+        except Exception:
+            pass
+
+    if os.path.exists(merged_path) and os.path.getsize(merged_path) > 500:
+        dur = _ffprobe_duration(merged_path)
+        print(f"[LONG-TTS] 완료: {merged_path} ({dur:.1f}초)")
+        return merged_path
     return None
 
 
@@ -787,6 +912,25 @@ def _split_narration_subtitles(text: str, n_slides: int) -> list:
     return [sentences[i % len(sentences)] for i in range(n_slides)]
 
 
+def _split_narration_by_scenes(narration: str, n: int) -> list:
+    """전체 나레이션을 n개 씬에 걸쳐 균등 분배 (공백 경계에서 자름). 장편 영상용."""
+    text = (narration or "").strip()
+    if not text or n <= 0:
+        return [""] * max(n, 0)
+    words = text.split()
+    if not words:
+        return [""] * n
+    per = max(1, round(len(words) / n))
+    lines = []
+    for i in range(n):
+        start = i * per
+        end   = start + per if i < n - 1 else len(words)
+        lines.append(" ".join(words[start:end]).strip())
+        if start >= len(words):
+            lines[-1] = ""
+    return lines
+
+
 def create_viral_shorts(content_data: dict, job_id: str = ""):
     """
     Unsplash 이미지 슬라이드쇼 + 동적 자막 + TTS + BGM 쇼츠.
@@ -1050,6 +1194,221 @@ def create_viral_shorts(content_data: dict, job_id: str = ""):
         if job_id:
             _append_log(job_id, f"[VIRAL] ❌ 예외: {e}")
         return create_simple_video(content_data)
+
+
+def create_long_video(content_data: dict, job_id: str = ""):
+    """
+    5~7분 가로(1920x1080) 장편 영상: 이미지+클립 슬라이드쇼 + 장편 TTS + 자막 + BGM.
+    concat demuxer 방식. 세로 쇼츠(create_viral_shorts)와 완전히 독립된 경로.
+    """
+    def _jlog(msg):
+        print(msg)
+        if job_id:
+            _append_log(job_id, msg)
+
+    try:
+        ts         = datetime.now().strftime("%Y%m%d_%H%M%S")
+        video_path = os.path.join(VIDEOS_DIR, f"long_{ts}.mp4")
+        log_path   = os.path.join(IMAGES_DIR,  f"ffmpeg_long_{ts}.log")
+
+        try:
+            subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=10).check_returncode()
+        except Exception as e:
+            _jlog(f"[LONG] ffmpeg 없음: {e}")
+            return None
+
+        title     = content_data.get("title", "JARVIS-X")
+        narration = content_data.get("narration", "")
+        title_en  = content_data.get("title_en", "") or _ascii_only(title) or "JARVIS-X"
+        section_kw = content_data.get("section_keywords", [])
+        keywords   = content_data.get("keywords", [title_en])
+
+        # ── 1. 장편 TTS 생성 + 실제 길이 측정 ──────────────────────────────────
+        audio_path = create_long_tts_audio(narration or title)
+        if not audio_path:
+            _jlog("[LONG] ❌ TTS 생성 실패 — 장편 영상은 나레이션 필수, 중단")
+            return None
+        audio_dur = _ffprobe_duration(audio_path)
+        if audio_dur <= 0:
+            _jlog("[LONG] ❌ TTS 길이 측정 실패, 중단")
+            return None
+        _jlog(f"[LONG] TTS 완료: {audio_dur:.1f}초")
+
+        # ── 2. 씬 개수 산출 (오디오 길이 기준, 씬당 ~8.5초) ────────────────────
+        SCENE_SEC = 8.5
+        n_scenes  = max(6, math.ceil(audio_dur / SCENE_SEC))
+        n_images  = max(2, round(n_scenes * 0.3))
+        n_clips   = n_scenes - n_images
+        _jlog(f"[LONG] 씬 {n_scenes}개 계획 (이미지 {n_images} / 클립 {n_clips})")
+
+        # ── 3. 이미지 확보 (Unsplash → Pixabay 폴백) ───────────────────────────
+        img_kw = section_kw[:n_images] if section_kw else keywords
+        img_paths = _download_images_by_slides(img_kw[:n_images]) if img_kw else []
+        if len(img_paths) < n_images:
+            extra = _download_unsplash_images(keywords, count=n_images - len(img_paths))
+            if not extra:
+                extra = _download_pixabay_images(keywords, count=n_images - len(img_paths))
+            img_paths += extra
+        _jlog(f"[LONG] 이미지 {len(img_paths)}장")
+
+        # ── 4. 클립 확보 (Coverr/Pexels 우선 → Pixabay 보충, 전부 가로) ────────
+        clip_kw = section_kw[n_images:] if len(section_kw) > n_images else (section_kw or keywords)
+        clips = _fetch_pexels_clips(clip_kw, clip_sec=SCENE_SEC, max_clips=n_clips, landscape=True)
+        if len(clips) < n_clips:
+            more = _fetch_pixabay_clips(clip_kw[len(clips):] or clip_kw, clip_sec=SCENE_SEC,
+                                         max_clips=n_clips - len(clips), landscape=True)
+            clips += more
+        _jlog(f"[LONG] 클립 {len(clips)}개")
+
+        if len(img_paths) + len(clips) < 3:
+            _jlog("[LONG] ❌ 씬 소재 부족 (이미지+클립 3개 미만), 중단")
+            return None
+
+        # ── 5. 자막용 폰트 확인 ─────────────────────────────────────────────
+        ko_font = _find_korean_font()
+
+        # ── 6. concat 리스트: 이미지-클립 교대 배치 ────────────────────────────
+        concat_txt  = os.path.join(IMAGES_DIR, f"concat_long_{ts}.txt")
+        slide_items = []
+        img_q  = list(img_paths)
+        clip_q = list(clips)
+        while img_q or clip_q:
+            if img_q:
+                slide_items.append((os.path.abspath(img_q.pop(0)), False))
+            for _ in range(2):
+                if clip_q:
+                    slide_items.append((os.path.abspath(clip_q.pop(0)), True))
+        n = len(slide_items)
+        subtitle_lines = _split_narration_by_scenes(narration, n)
+        _jlog(f"[LONG] 자막: {'한국어' if ko_font else 'ASCII'} {n}개 씬")
+
+        with open(concat_txt, "w") as f:
+            for path, is_video in slide_items:
+                f.write(f"file '{path}'\n")
+                if not is_video:
+                    f.write(f"duration {SCENE_SEC}\n")
+            last_img = next((p for p, v in reversed(slide_items) if not v), None)
+            if last_img:
+                f.write(f"file '{last_img}'\n")
+
+        # ── 7. 자막 VF 구성 (가로 1920x1080 안전구역) ──────────────────────────
+        sub_parts = []
+        sub_parts.append("drawbox=x=0:y=h-160:w=iw:h=130:color=black@0.45:t=fill")
+        sub_parts.append(
+            "drawtext=text='@future.minute'"
+            ":fontsize=26:fontcolor=white@0.75"
+            ":x=w-text_w-30:y=h-55"
+            ":borderw=2:bordercolor=black@0.7"
+        )
+        for idx, line in enumerate(subtitle_lines):
+            t_s = idx * SCENE_SEC + 0.3
+            t_e = t_s + SCENE_SEC - 0.6
+            if ko_font and line:
+                fp = ko_font.replace("\\", "/")
+                safe_line = _ffmpeg_escape(str(line)[:40])
+                sub_parts.append(
+                    f"drawtext=fontfile='{fp}'"
+                    f":text='{safe_line}'"
+                    f":fontsize=40:fontcolor=yellow"
+                    f":x=(w-text_w)/2:y=h-120"
+                    f":enable='between(t,{t_s:.1f},{t_e:.1f})'"
+                    f":borderw=3:bordercolor=black@0.95"
+                    f":shadowx=2:shadowy=2:shadowcolor=black@0.8"
+                )
+            elif line:
+                safe_line = _ffmpeg_escape(_ascii_only(str(line))[:60])
+                sub_parts.append(
+                    f"drawtext=text='{safe_line}'"
+                    f":fontsize=38:fontcolor=yellow"
+                    f":x=(w-text_w)/2:y=h-120"
+                    f":enable='between(t,{t_s:.1f},{t_e:.1f})'"
+                    f":borderw=3:bordercolor=black@0.95"
+                    f":shadowx=2:shadowy=2:shadowcolor=black@0.8"
+                )
+
+        # ── 8. Ken Burns (가로 1920x1080) ──────────────────────────────────────
+        D = SCENE_SEC
+        _kb_pans = [
+            f"crop=1920:1080:x='min(960,max(0,960*mod(t,{D})/{D}))':y=270",
+            f"crop=1920:1080:x='min(960,max(0,960*(1-mod(t,{D})/{D})))':y=270",
+            f"crop=1920:1080:x=480:y='min(270,max(0,270*mod(t,{D})/{D}))'",
+            f"crop=1920:1080:x=480:y='min(270,max(0,270*(1-mod(t,{D})/{D})))'",
+        ]
+        kb_pan  = random.choice(_kb_pans)
+        base_vf = (
+            f"scale=2880:1620:force_original_aspect_ratio=increase,"
+            f"{kb_pan},"
+            f"eq=brightness=0.12:contrast=1.15:saturation=1.5"
+        )
+        sub_vf = base_vf + "," + ",".join(sub_parts) + ",format=yuv420p" if sub_parts else base_vf + ",format=yuv420p"
+
+        # ── 9. BGM + 인코딩 ─────────────────────────────────────────────────
+        bgm_expr  = (
+            "0.08*sin(110*2*PI*t)*(0.6+0.4*sin(0.5*2*PI*t))"
+            "+0.05*sin(220*2*PI*t)+0.03*sin(330*2*PI*t)+0.02*sin(440*2*PI*t)"
+        )
+        bgm_lavfi = f"aevalsrc={bgm_expr}:s=44100:c=stereo"
+        vid_enc = ["-c:v", "libx264", "-preset", "ultrafast",
+                   "-crf", "26", "-pix_fmt", "yuv420p", "-threads", "2"]
+        aud_enc = ["-c:a", "aac", "-b:a", "128k"]
+        concat_in = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt]
+
+        def _try(label, cmd, t=900):
+            if os.path.exists(video_path):
+                os.remove(video_path)
+            _jlog(f"[LONG] 전략: {label}")
+            rc, log_content = _run_ffmpeg(cmd, log_path, timeout=t)
+            exists = os.path.exists(video_path)
+            size   = os.path.getsize(video_path) if exists else 0
+            ok     = exists and size > 2000
+            _jlog(f"[LONG] {'✅ 성공' if ok else '❌ 실패'} ({label}): rc={rc} {size}B")
+            if not ok and exists:
+                os.remove(video_path)
+            return ok
+
+        fc1 = (
+            "[1:a]volume=1.0[voice];"
+            "[2:a]volume=0.10[bgm];"
+            "[voice][bgm]amix=inputs=2:duration=first[aout]"
+        )
+        cmd1 = (
+            concat_in + ["-i", audio_path] +
+            ["-f", "lavfi", "-i", bgm_lavfi] +
+            ["-filter_complex", fc1] +
+            ["-vf", sub_vf] +
+            ["-map", "0:v", "-map", "[aout]"] +
+            vid_enc + aud_enc + ["-shortest", video_path]
+        )
+        if _try("concat+sub+voice+bgm", cmd1):
+            return video_path
+
+        cmd2 = (
+            concat_in + ["-i", audio_path] +
+            ["-vf", sub_vf] +
+            ["-map", "0:v", "-map", "1:a"] +
+            vid_enc + aud_enc + ["-shortest", video_path]
+        )
+        if _try("concat+sub+voice", cmd2):
+            return video_path
+
+        cmd3 = (
+            concat_in + ["-i", audio_path] +
+            ["-vf", base_vf + ",format=yuv420p"] +
+            ["-map", "0:v", "-map", "1:a"] +
+            vid_enc + aud_enc + ["-shortest", video_path]
+        )
+        if _try("concat+voice-nosub", cmd3):
+            return video_path
+
+        _jlog("[LONG] ❌ 모든 인코딩 전략 실패")
+        return None
+
+    except Exception as e:
+        err_msg = f"[ERROR] create_long_video 예외: {e}\n{traceback.format_exc()}"
+        print(err_msg)
+        if job_id:
+            _append_log(job_id, f"[LONG] ❌ 예외: {e}")
+        return None
 
 
 # ── YouTube ──────────────────────────────────────────────────────────────────
@@ -1479,6 +1838,76 @@ JSON 외 텍스트 절대 금지!
         return None
 
 
+def long_video_package_json():
+    """5~7분 가로(16:9) 장편 YouTube 영상용 콘텐츠 JSON 생성."""
+    import random
+    today_topic = select_todays_topic()
+    category    = today_topic["category"]
+    kw_list     = today_topic["keywords"]
+    kw_sample   = random.choice(kw_list)
+
+    vp           = _load_viral_patterns()
+    learned_hint = ""
+    if vp:
+        hot_keywords = [k["keyword"] for k in vp.get("trending_keywords", [])[:3]]
+        if hot_keywords:
+            learned_hint += f"\n반드시 포함할 트렌딩 키워드: {', '.join(hot_keywords)}"
+
+    current_year = datetime.now().year
+
+    prompt = f"""
+유튜브 일반 영상(가로, 5~7분)용 데이터를 JSON으로 생성해줘.
+이 채널(@future.minute-ai)은 AI 자동화로 실제 수익을 낸 사람들의 이야기를 깊이 있게 다룬다.
+현재 연도: {current_year}년 (연도 언급 시 반드시 {current_year}년 사용)
+
+오늘의 카테고리: [{category}]
+핵심 키워드: {kw_sample}
+{learned_hint}
+
+【나레이션 요구사항】
+- 분량: 한국어 1500~2200자 (약 5~7분 분량), 800~1200단어
+- 말투: 존댓말 + 친근한 설명체. 도입(궁금증 유발) → 본론(구체적 사례·숫자·단계별 설명, 최소 3개 섹션) → 마무리(핵심 요약 + 구독/알림 유도)
+- 각 섹션은 새로운 소주제로 자연스럽게 전환
+
+【제목 규칙】
+- 궁금증 유발 또는 혜택 명시, 30자 이내
+- 이모지 1개만 (🤖💰⚡ 등)
+
+반드시 이 JSON만 반환:
+{{
+  "title": "한국어 제목 (30자 이내)",
+  "title_en": "English title (max 60 chars, ASCII only)",
+  "description": "YouTube 설명 (300자 이내, 핵심 키워드 + 해시태그 3개 포함)",
+  "tags": ["태그1", "태그2", "태그3", "태그4", "태그5", "태그6", "태그7"],
+  "narration": "1500~2200자 장편 한국어 나레이션 (도입-본론-마무리 구조)",
+  "narration_en": "English summary narration (max 400 chars)",
+  "section_keywords": ["scene1 visual", "scene2 visual", "...", "scene35 visual"]
+}}
+
+section_keywords: 나레이션을 시간순으로 따라가는 장면별 Unsplash/Pixabay/Pexels 검색 영어 키워드 30~40개.
+각 키워드는 그 순간의 시각적 장면을 구체적으로 묘사 (예: "person analyzing charts on laptop", "excited entrepreneur celebrating success").
+JSON 외 텍스트 절대 금지!
+"""
+    print("[INFO] long_video_package_json: AI 요청 중...")
+    response = ask_ai(prompt, 6000)
+    if not response:
+        print("[ERROR] long_video_package_json: AI 응답 없음")
+        return None
+    try:
+        s = response.find("{")
+        e = response.rfind("}") + 1
+        if s < 0 or e <= 0:
+            print(f"[ERROR] long_video_package_json: JSON 없음. 원문:\n{response}")
+            return None
+        data = json.loads(response[s:e])
+        print(f"[INFO] long_video_package_json: 파싱 성공 - {data.get('title')} "
+              f"(나레이션 {len(data.get('narration',''))}자)")
+        return data
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] long_video_package_json: JSON 파싱 실패 - {e}\n원문:\n{response}")
+        return None
+
+
 # ── 백그라운드 작업 실행기 ────────────────────────────────────────────────────
 
 def _run_video_job(job_id: str) -> None:
@@ -1575,6 +2004,79 @@ def _run_video_job(job_id: str) -> None:
 
     except Exception as e:
         print(f"[ERROR] Job {job_id} 예외: {e}\n{traceback.format_exc()}")
+        _append_log(job_id, f"❌ 예외 발생: {e}")
+        _update_job(job_id, status="error", error=str(e))
+
+
+def _run_long_video_job(job_id: str) -> None:
+    """5~7분 장편 영상 제작 파이프라인 - 백그라운드 스레드에서 실행 (주간 1회)"""
+    try:
+        _update_job(job_id, status="running")
+
+        _append_log(job_id, "1️⃣ AI 장편 콘텐츠 생성 중...")
+        content_data = long_video_package_json()
+        if not content_data:
+            _append_log(job_id, "❌ 콘텐츠 생성 실패 (API 키 확인 필요: /debug)")
+            _update_job(job_id, status="error", error="AI 콘텐츠 생성 실패")
+            return
+        _append_log(job_id, f"✅ 콘텐츠 완료: {content_data.get('title')}")
+        _update_job(job_id, content=content_data)
+
+        _append_log(job_id, "2️⃣ 장편 영상 생성 중 (TTS+씬 소재 수집+인코딩, 시간이 오래 걸릴 수 있음)...")
+        video_path = create_long_video(content_data, job_id=job_id)
+        if not video_path:
+            _append_log(job_id, "❌ 영상 생성 실패")
+            _update_job(job_id, status="error", error="영상 생성 실패", content=content_data)
+            return
+        _append_log(job_id, f"✅ 영상 완료: {video_path}")
+        _update_job(job_id, video_path=video_path)
+
+        title_ko  = content_data.get("title", "")
+        title_en  = content_data.get("title_en", "") or _ascii_only(title_ko)
+        narration = content_data.get("narration", "")
+        tags      = content_data.get("tags", [])
+        desc      = content_data.get("description", "")
+
+        _append_log(job_id, "3️⃣ YouTube 업로드 시도 중...")
+        upload = upload_to_youtube(video_path, title_ko, desc, tags)
+        yt_status = upload.get("status")
+        if yt_status == "success":
+            _append_log(job_id, f"✅ YouTube 업로드 완료!\n🔗 {upload.get('url')}")
+            _save_success_metric(upload.get("video_id", ""), title_ko, upload.get("url", ""))
+        elif yt_status == "auth_required":
+            _append_log(job_id, f"⚠️ YouTube 인증 필요: {upload.get('message', '')}")
+        elif yt_status == "skipped":
+            _append_log(job_id, "💾 YouTube 건너뜀 (Google 패키지 미설치)")
+        else:
+            _append_log(job_id, f"❌ YouTube 업로드 실패: {upload.get('message', '알 수 없는 오류')}")
+
+        meta_result = {}
+        if yt_status == "success":
+            video_id = upload.get("video_id", "")
+            ts_now   = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            _append_log(job_id, "4️⃣ YouTube SEO 제목 최적화 중...")
+            seo_title = _generate_seo_title(title_ko, narration)
+            _append_log(job_id, f"✅ SEO 제목: {seo_title[:40]}")
+
+            _append_log(job_id, "5️⃣ 썸네일 생성 중 (FFmpeg)...")
+            thumb_path = _create_thumbnail(title_en or title_ko, ts_now)
+            if thumb_path:
+                _append_log(job_id, f"✅ 썸네일 생성: {thumb_path}")
+            else:
+                _append_log(job_id, "⚠️ 썸네일 생성 실패 (원본 제목 사용)")
+
+            _append_log(job_id, "6️⃣ YouTube 제목/썸네일 업데이트 중...")
+            meta_result = optimize_youtube_metadata(video_id, seo_title, desc, tags, thumb_path)
+            if meta_result.get("status") == "success":
+                _append_log(job_id, f"✅ 메타 업데이트 완료: {seo_title[:30]}")
+            else:
+                _append_log(job_id, f"⚠️ 메타 업데이트 실패: {meta_result.get('message','')}")
+
+        _update_job(job_id, status="done", youtube=upload, youtube_meta=meta_result)
+
+    except Exception as e:
+        print(f"[ERROR] Long video job {job_id} 예외: {e}\n{traceback.format_exc()}")
         _append_log(job_id, f"❌ 예외 발생: {e}")
         _update_job(job_id, status="error", error=str(e))
 
@@ -1821,13 +2323,13 @@ def get_pexels_videos(keyword: str, count: int = 5) -> list:
     return []
 
 
-def _download_one_pexels_clip(query: str, clip_sec: float, clip_path: str, raw_path: str, api_key: str) -> bool:
+def _download_one_pexels_clip(query: str, clip_sec: float, clip_path: str, raw_path: str, api_key: str, landscape: bool = False) -> bool:
     """단일 쿼리로 Pexels 클립 1개 다운로드·전처리. 성공 시 True."""
     try:
         resp = requests.get(
             "https://api.pexels.com/videos/search",
             headers={"Authorization": api_key},
-            params={"query": query, "per_page": 3, "orientation": "portrait"},
+            params={"query": query, "per_page": 3, "orientation": "landscape" if landscape else "portrait"},
             timeout=15,
         )
         if resp.status_code != 200:
@@ -1851,12 +2353,14 @@ def _download_one_pexels_clip(query: str, clip_sec: float, clip_path: str, raw_p
         print("[WARN]", f"[PEXELS] 다운로드 실패 '{query}': {e}")
         return False
 
+    scale_crop = ("scale=3413:1920:force_original_aspect_ratio=increase,crop=1920:1080"
+                  if landscape else
+                  "scale=1620:2880:force_original_aspect_ratio=increase,crop=1080:1920")
     cmd = [
         "ffmpeg", "-y", "-ss", "0", "-i", raw_path,
         "-t", str(clip_sec),
         "-vf", (
-            "scale=1620:2880:force_original_aspect_ratio=increase,"
-            "crop=1080:1920,"
+            f"{scale_crop},"
             "eq=brightness=0.15:contrast=1.2:saturation=1.7,"
             "format=yuv420p"
         ),
@@ -1872,7 +2376,7 @@ def _download_one_pexels_clip(query: str, clip_sec: float, clip_path: str, raw_p
     return os.path.exists(clip_path) and os.path.getsize(clip_path) > 5000
 
 
-def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 5) -> list:
+def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 5, landscape: bool = False) -> list:
     """
     Coverr 우선 → Pexels 폴백으로 클립 수집.
     keywords 리스트에서 키워드별로 각각 다른 장면 검색 (다양성 확보).
@@ -1901,7 +2405,7 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
         # 1순위: Coverr (동적 감성 영상)
         if coverr_key:
             print(f"[INFO] [COVERR] 클립 {idx+1}/{max_clips}: '{query}'")
-            if _download_one_coverr_clip(query, clip_sec, clip_path, raw_path, coverr_key):
+            if _download_one_coverr_clip(query, clip_sec, clip_path, raw_path, coverr_key, landscape=landscape):
                 clips.append(clip_path)
                 print(f"[INFO] [COVERR] OK: {clip_path}")
                 continue
@@ -1910,7 +2414,7 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
         # 2순위: Pexels
         if pexels_key:
             print(f"[INFO] [PEXELS] 폴백 클립: '{query}'")
-            if _download_one_pexels_clip(query, clip_sec, clip_path, raw_path, pexels_key):
+            if _download_one_pexels_clip(query, clip_sec, clip_path, raw_path, pexels_key, landscape=landscape):
                 clips.append(clip_path)
                 print(f"[INFO] [PEXELS] OK: {clip_path}")
                 continue
@@ -1920,7 +2424,87 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
     return clips
 
 
-def _download_one_coverr_clip(query: str, clip_sec: float, clip_path: str, raw_path: str, api_key: str) -> bool:
+def _fetch_pixabay_clips(keywords: list, clip_sec: float = 8.0, max_clips: int = 10, landscape: bool = True) -> list:
+    """
+    Pixabay Video API로 클립 수집 (장편 영상용 — Coverr/Pexels 보조 소스).
+    PIXABAY_API_KEY 없으면 빈 리스트 반환.
+    """
+    api_key = os.getenv("PIXABAY_API_KEY", "").strip()
+    if not api_key:
+        return []
+
+    ts    = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    clips = []
+
+    queries = [str(k) for k in keywords] if keywords else ["technology", "business", "people"]
+    fallbacks = ["office work", "city life", "success business", "technology future", "people working"]
+    while len(queries) < max_clips:
+        queries.append(fallbacks[len(queries) % len(fallbacks)])
+
+    scale_crop = ("scale=3413:1920:force_original_aspect_ratio=increase,crop=1920:1080"
+                  if landscape else
+                  "scale=1620:2880:force_original_aspect_ratio=increase,crop=1080:1920")
+
+    for idx, query in enumerate(queries[:max_clips]):
+        if len(clips) >= max_clips:
+            break
+        raw_path  = os.path.join(IMAGES_DIR, f"pxb_raw_{ts}_{idx}.mp4")
+        clip_path = os.path.join(IMAGES_DIR, f"pxb_clip_{ts}_{idx}.mp4")
+        try:
+            resp = requests.get(
+                "https://pixabay.com/api/videos/",
+                params={"key": api_key, "q": query, "safesearch": "true", "per_page": 3},
+                timeout=15,
+            )
+            if resp.status_code != 200:
+                print(f"[WARN] [PIXABAY-VIDEO] '{query}' HTTP {resp.status_code}")
+                continue
+            hits = resp.json().get("hits", [])
+            if not hits:
+                print(f"[WARN] [PIXABAY-VIDEO] '{query}' 검색결과 없음")
+                continue
+            videos    = hits[0].get("videos", {})
+            video_url = (videos.get("medium", {}).get("url")
+                         or videos.get("small", {}).get("url")
+                         or videos.get("large", {}).get("url", ""))
+            if not video_url:
+                continue
+            dl = requests.get(video_url, timeout=20, stream=True)
+            if dl.status_code != 200:
+                continue
+            size = 0
+            with open(raw_path, "wb") as f:
+                for chunk in dl.iter_content(65536):
+                    f.write(chunk)
+                    size += len(chunk)
+                    if size > 30 * 1024 * 1024:
+                        break
+            if os.path.getsize(raw_path) < 10000:
+                continue
+        except Exception as e:
+            print(f"[WARN] [PIXABAY-VIDEO] 다운로드 실패 '{query}': {e}")
+            continue
+
+        cmd = [
+            "ffmpeg", "-y", "-ss", "0", "-i", raw_path,
+            "-t", str(clip_sec),
+            "-vf", f"{scale_crop},eq=brightness=0.15:contrast=1.2:saturation=1.7,format=yuv420p",
+            "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30", "-threads", "1",
+            clip_path,
+        ]
+        _run_ffmpeg(cmd, clip_path.replace(".mp4", ".log"), timeout=60)
+        try:
+            os.remove(raw_path)
+        except Exception:
+            pass
+        if os.path.exists(clip_path) and os.path.getsize(clip_path) > 5000:
+            clips.append(clip_path)
+            print(f"[INFO] [PIXABAY-VIDEO] OK: {clip_path}")
+
+    return clips
+
+
+def _download_one_coverr_clip(query: str, clip_sec: float, clip_path: str, raw_path: str, api_key: str, landscape: bool = False) -> bool:
     """Coverr API로 단일 클립 다운로드·전처리. 성공 시 True."""
     try:
         resp = requests.get(
@@ -1959,12 +2543,14 @@ def _download_one_coverr_clip(query: str, clip_sec: float, clip_path: str, raw_p
         print("[WARN]", f"[COVERR] 다운로드 실패 '{query}': {e}")
         return False
 
+    scale_crop = ("scale=3413:1920:force_original_aspect_ratio=increase,crop=1920:1080"
+                  if landscape else
+                  "scale=1620:2880:force_original_aspect_ratio=increase,crop=1080:1920")
     cmd = [
         "ffmpeg", "-y", "-ss", "0", "-i", raw_path,
         "-t", str(clip_sec),
         "-vf", (
-            "scale=1620:2880:force_original_aspect_ratio=increase,"
-            "crop=1080:1920,"
+            f"{scale_crop},"
             "eq=brightness=0.15:contrast=1.2:saturation=1.7,"
             "format=yuv420p"
         ),
@@ -2077,6 +2663,27 @@ def start_video():
     t = threading.Thread(target=_run_video_job, args=(job_id,), daemon=True)
     t.start()
     print(f"[INFO] 백그라운드 작업 시작: {job_id}")
+    return jsonify({"job_id": job_id, "status": "queued"}), 202
+
+
+@app.route("/start-long-video", methods=["POST"])
+def start_long_video():
+    """5~7분 장편(가로) 영상 제작 백그라운드 작업 시작 → 즉시 job_id 반환 (주간 1회용)"""
+    _cleanup_old_jobs()
+    job_id = uuid.uuid4().hex[:12]
+    with _jobs_lock:
+        _jobs[job_id] = {
+            "status": "queued",
+            "logs": ["⏳ 장편 영상 작업 대기 중..."],
+            "created_at": datetime.now().isoformat(),
+            "content": None,
+            "video_path": None,
+            "youtube": None,
+            "error": None
+        }
+    t = threading.Thread(target=_run_long_video_job, args=(job_id,), daemon=True)
+    t.start()
+    print(f"[INFO] 장편 영상 백그라운드 작업 시작: {job_id}")
     return jsonify({"job_id": job_id, "status": "queued"}), 202
 
 
