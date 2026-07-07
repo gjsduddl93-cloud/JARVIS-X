@@ -2837,11 +2837,12 @@ def start_long_video():
 @app.route("/batch-video", methods=["POST"])
 def batch_video():
     """배치 영상 제작 (최대 5개, 순차 실행).
-    POST body: {"count": 5, "include_infographic": false, "infographic_privacy": "public"}
-    infographic_privacy는 인포그래픽 슬롯에만 적용(기본 public, 테스트 시 private/unlisted 지정 가능)."""
+    POST body: {"count": 5, "include_infographic": false, "infographic_privacy": "private"}
+    infographic_privacy는 인포그래픽 슬롯에만 적용 — 기본값 private
+    (안정성 검증 기간, 수 일간 비공개로 쌓아두고 검토 후 public으로 전환 예정)."""
     data  = request.get_json(silent=True) or {}
     count = min(max(int(data.get("count", 5)), 1), 5)
-    infographic_privacy = data.get("infographic_privacy", "public")
+    infographic_privacy = data.get("infographic_privacy", "private")
 
     job_types = ["shorts"] * count
     infographic_topic = None
