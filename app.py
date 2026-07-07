@@ -1475,6 +1475,8 @@ def get_youtube_service():
 # Render free는 재시작 시 로컬 상태가 전부 사라지므로, "최근 며칠 이내 뭘 올렸는지"를
 # 로컬 파일/메모리에 저장하지 않고 YouTube 업로드 이력(태그의 topic:<id> 마커) 자체를
 # 진실 공급원으로 삼는다 — 재배포/재시작에도 안전하게 살아남는 유일한 저장소이기 때문.
+# 실제 쿨다운 일수는 _pick_infographic_topic()에서 토픽 풀 크기로 동적으로 정해진다
+# (풀이 커질수록 로테이션 주기도 자동으로 넓어짐). 아래 상수는 직접 호출 시 기본값.
 INFOGRAPHIC_TOPIC_COOLDOWN_DAYS = 7
 
 
@@ -1523,22 +1525,23 @@ def _get_recently_posted_topic_ids(days: int = INFOGRAPHIC_TOPIC_COOLDOWN_DAYS):
 
 def _pick_infographic_topic():
     """게시 가능한(최근 N일 이내 미게시) 인포그래픽 토픽 하나 선택. 없으면 None.
-    현재는 토픽이 1개뿐이라 최근 게시했으면 매번 None이 되고 그만큼 일반 shorts로
-    대체된다 — 토픽 풀이 늘어나면(2단계에서 조사한 KOSIS 등 추가 시) 자연히
-    로테이션 폭이 넓어지는 구조."""
+    N(쿨다운 일수) = 토픽 풀 크기 — 소재가 늘어날수록 로테이션 주기가 자동으로
+    넓어지고, 풀 전체를 한 바퀴 돈 뒤에야 같은 소재가 다시 나온다."""
     scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
     if scripts_dir not in sys.path:
         sys.path.insert(0, scripts_dir)
     import prototype_infographic as _proto
 
-    posted = _get_recently_posted_topic_ids()
+    topic_ids = list(_proto.TOPICS.keys())
+    cooldown_days = len(topic_ids)
+
+    posted = _get_recently_posted_topic_ids(days=cooldown_days)
     if posted is None:
         return None
 
-    topics = [{"id": _proto.TOPIC_ID, "module": _proto}]
-    for topic in topics:
-        if topic["id"] not in posted:
-            return topic
+    for topic_id in topic_ids:
+        if topic_id not in posted:
+            return {"id": topic_id, "module": _proto}
     return None
 
 
@@ -2106,18 +2109,20 @@ def _run_infographic_job(job_id: str, topic: dict, privacy_status: str = "public
     """데이터 인포그래픽 영상 제작 파이프라인 - matplotlib 렌더링 + 기존 YouTube 업로드 재사용.
     SEO 제목 최적화/썸네일/Instagram 단계는 아직 포함하지 않음(범위 밖)."""
     proto = topic["module"]
+    topic_id = topic["id"]
+    topic_def = proto.TOPICS[topic_id]
     try:
         _update_job(job_id, status="running")
 
-        _append_log(job_id, "1️⃣ 데이터 소스 조회 중 (World Bank API)...")
-        data = proto.fetch_worldbank_data()
+        _append_log(job_id, f"1️⃣ 데이터 소스 조회 중 ({topic_id})...")
+        data = topic_def["fetch"]()
         _append_log(job_id, f"✅ 데이터 확보: {len(data)}개국")
 
         frames_dir = os.path.join(IMAGES_DIR, f"infographic_frames_{job_id}")
         out_path   = os.path.join(IMAGES_DIR, f"infographic_{job_id}.mp4")
 
         _append_log(job_id, "2️⃣ 인포그래픽 프레임 렌더링 중 (matplotlib)...")
-        proto.render_frames(data, frames_dir)
+        proto.render_frames(data, topic_def, frames_dir)
 
         _append_log(job_id, "3️⃣ 영상 인코딩 중 (ffmpeg)...")
         proto.encode_video(frames_dir, out_path)
@@ -2130,7 +2135,7 @@ def _run_infographic_job(job_id: str, topic: dict, privacy_status: str = "public
         _append_log(job_id, f"✅ 영상 완료: {out_path}")
         _update_job(job_id, video_path=out_path)
 
-        title, desc, tags = proto.build_metadata(data)
+        title, desc, tags = proto.build_metadata(data, topic_id)
 
         _append_log(job_id, "4️⃣ YouTube 업로드 시도 중...")
         upload = upload_to_youtube(out_path, title, desc, tags, privacy_status=privacy_status)
