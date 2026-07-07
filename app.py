@@ -27,7 +27,6 @@ except ImportError as _google_import_err:
 from dotenv import load_dotenv
 from datetime import datetime
 import os
-import sys
 import re
 import json
 import traceback
@@ -3165,40 +3164,6 @@ def test_unsplash():
         result["traceback_tail"] = traceback.format_exc()[-400:]
 
     return jsonify(result), 200
-
-
-@app.route("/test-infographic-render", methods=["GET"])
-def test_infographic_render():
-    """[임시 진단용 — 테스트 후 제거 예정] 인포그래픽 프로토타입 렌더링 시간 측정.
-    업로드/배치 로직과 무관한 1회성 렌더링 테스트. 결과 mp4는 저장하지 않고 크기만 보고."""
-    import time as _time
-    scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
-    if scripts_dir not in sys.path:
-        sys.path.insert(0, scripts_dir)
-    import prototype_infographic as proto
-
-    t0 = _time.time()
-    data = proto.fetch_worldbank_data()
-    t1 = _time.time()
-    proto.render_frames(data)
-    t2 = _time.time()
-    proto.encode_video()
-    t3 = _time.time()
-    size_mb = round(os.path.getsize(proto.OUT_MP4) / 1024 / 1024, 3) if os.path.exists(proto.OUT_MP4) else None
-    proto.cleanup_frames()
-    if os.path.exists(proto.OUT_MP4):
-        os.remove(proto.OUT_MP4)
-    t4 = _time.time()
-
-    return jsonify({
-        "fetch_data_sec":    round(t1 - t0, 2),
-        "render_frames_sec": round(t2 - t1, 2),
-        "encode_sec":        round(t3 - t2, 2),
-        "cleanup_sec":       round(t4 - t3, 2),
-        "total_sec":         round(t4 - t0, 2),
-        "output_size_mb":    size_mb,
-        "frame_count":       proto.TOTAL_FRAMES,
-    }), 200
 
 
 @app.route("/stats", methods=["GET"])
