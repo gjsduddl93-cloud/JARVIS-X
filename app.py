@@ -25,8 +25,9 @@ except ImportError as _google_import_err:
     GOOGLE_AVAILABLE = False
 
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
+import sys
 import re
 import json
 import traceback
@@ -71,6 +72,28 @@ for _dir in [PROJECTS_DIR, VIDEOS_DIR, AUDIO_DIR, IMAGES_DIR, DATA_DIR]:
 
 # ── 한국어 폰트 경로 (repo 내 fonts/ 폴더) ───────────────────────────────────
 _NANUM_LOCAL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts", "NanumGothicBold.ttf")
+
+
+def _warm_matplotlib_font_cache():
+    """gunicorn 부팅 시점에 matplotlib 폰트 캐시를 미리 빌드.
+    재배포 직후 첫 요청에서 폰트 캐시 최초 빌드로 인해 502(워커 크래시)가
+    발생했던 것을 막기 위함 — 실제 배치 요청 전에 미리 비용을 치른다."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from matplotlib.font_manager import FontProperties
+        fp = FontProperties(fname=_NANUM_LOCAL)
+        fig = plt.figure(figsize=(1, 1))
+        fig.text(0.5, 0.5, "가나다", fontproperties=fp)
+        fig.canvas.draw()
+        plt.close(fig)
+        print("[INIT] matplotlib 폰트 캐시 워밍업 완료")
+    except Exception as e:
+        print(f"[WARN] matplotlib 폰트 캐시 워밍업 실패(첫 인포그래픽 요청이 느릴 수 있음): {e}")
+
+
+_warm_matplotlib_font_cache()
 
 # ── 자체 학습 시스템: viral_patterns.json 로드 ────────────────────────────────
 _VIRAL_PATTERNS_FILE = os.path.join(DATA_DIR, "viral_patterns.json")
@@ -1448,6 +1471,77 @@ def get_youtube_service():
         return None, str(e)
 
 
+# ── 인포그래픽 소재 로테이션 ──────────────────────────────────────────────────
+# Render free는 재시작 시 로컬 상태가 전부 사라지므로, "최근 며칠 이내 뭘 올렸는지"를
+# 로컬 파일/메모리에 저장하지 않고 YouTube 업로드 이력(태그의 topic:<id> 마커) 자체를
+# 진실 공급원으로 삼는다 — 재배포/재시작에도 안전하게 살아남는 유일한 저장소이기 때문.
+INFOGRAPHIC_TOPIC_COOLDOWN_DAYS = 7
+
+
+def _get_recently_posted_topic_ids(days: int = INFOGRAPHIC_TOPIC_COOLDOWN_DAYS):
+    """최근 N일 이내 업로드된 영상들의 topic:<id> 태그 집합.
+    조회 자체가 실패하면 None을 반환 — 호출부는 이를 '안전하게 게시 보류'로 처리해야 함
+    (판단이 안 설 땐 중복 게시 위험이 있는 쪽 대신 건너뛰는 쪽을 택한다).
+    search().list(forMine=True)는 파라미터 조합에 따라 400 에러가 나는 경우가 있어,
+    공식적으로 더 안정적인 channels().list(mine=True) → uploads 재생목록 조회 방식을 쓴다."""
+    svc, err = get_youtube_service()
+    if not svc:
+        print(f"[WARN] 토픽 이력 조회 불가(YouTube 인증 실패: {err}) — 인포그래픽 게시 보류")
+        return None
+    try:
+        ch_resp = svc.channels().list(part="contentDetails", mine=True).execute()
+        items = ch_resp.get("items", [])
+        if not items:
+            print("[WARN] 채널 정보 조회 실패(items 없음) — 인포그래픽 게시 보류")
+            return None
+        uploads_playlist_id = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        pl_resp = svc.playlistItems().list(
+            part="snippet", playlistId=uploads_playlist_id, maxResults=15,
+        ).execute()
+
+        video_ids = []
+        for item in pl_resp.get("items", []):
+            pub_dt = datetime.strptime(item["snippet"]["publishedAt"], "%Y-%m-%dT%H:%M:%SZ")
+            if pub_dt >= cutoff:
+                video_ids.append(item["snippet"]["resourceId"]["videoId"])
+        if not video_ids:
+            return set()
+
+        vids_resp = svc.videos().list(part="snippet", id=",".join(video_ids)).execute()
+        posted = set()
+        for item in vids_resp.get("items", []):
+            for tag in (item.get("snippet", {}).get("tags") or []):
+                if tag.startswith("topic:"):
+                    posted.add(tag.split("topic:", 1)[1])
+        return posted
+    except Exception as e:
+        print(f"[WARN] _get_recently_posted_topic_ids 실패: {e} — 인포그래픽 게시 보류")
+        return None
+
+
+def _pick_infographic_topic():
+    """게시 가능한(최근 N일 이내 미게시) 인포그래픽 토픽 하나 선택. 없으면 None.
+    현재는 토픽이 1개뿐이라 최근 게시했으면 매번 None이 되고 그만큼 일반 shorts로
+    대체된다 — 토픽 풀이 늘어나면(2단계에서 조사한 KOSIS 등 추가 시) 자연히
+    로테이션 폭이 넓어지는 구조."""
+    scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    import prototype_infographic as _proto
+
+    posted = _get_recently_posted_topic_ids()
+    if posted is None:
+        return None
+
+    topics = [{"id": _proto.TOPIC_ID, "module": _proto}]
+    for topic in topics:
+        if topic["id"] not in posted:
+            return topic
+    return None
+
+
 def upload_to_youtube(video_path, title, description, tags):
     if not GOOGLE_AVAILABLE:
         return {"status": "skipped", "message": "google_packages_not_installed"}
@@ -2004,6 +2098,59 @@ def _run_video_job(job_id: str) -> None:
 
     except Exception as e:
         print(f"[ERROR] Job {job_id} 예외: {e}\n{traceback.format_exc()}")
+        _append_log(job_id, f"❌ 예외 발생: {e}")
+        _update_job(job_id, status="error", error=str(e))
+
+
+def _run_infographic_job(job_id: str, topic: dict) -> None:
+    """데이터 인포그래픽 영상 제작 파이프라인 - matplotlib 렌더링 + 기존 YouTube 업로드 재사용.
+    SEO 제목 최적화/썸네일/Instagram 단계는 아직 포함하지 않음(범위 밖)."""
+    proto = topic["module"]
+    try:
+        _update_job(job_id, status="running")
+
+        _append_log(job_id, "1️⃣ 데이터 소스 조회 중 (World Bank API)...")
+        data = proto.fetch_worldbank_data()
+        _append_log(job_id, f"✅ 데이터 확보: {len(data)}개국")
+
+        frames_dir = os.path.join(IMAGES_DIR, f"infographic_frames_{job_id}")
+        out_path   = os.path.join(IMAGES_DIR, f"infographic_{job_id}.mp4")
+
+        _append_log(job_id, "2️⃣ 인포그래픽 프레임 렌더링 중 (matplotlib)...")
+        proto.render_frames(data, frames_dir)
+
+        _append_log(job_id, "3️⃣ 영상 인코딩 중 (ffmpeg)...")
+        proto.encode_video(frames_dir, out_path)
+        proto.cleanup_frames(frames_dir)
+
+        if not os.path.exists(out_path):
+            _append_log(job_id, "❌ 인포그래픽 영상 생성 실패")
+            _update_job(job_id, status="error", error="인포그래픽 렌더링 실패")
+            return
+        _append_log(job_id, f"✅ 영상 완료: {out_path}")
+        _update_job(job_id, video_path=out_path)
+
+        title, desc, tags = proto.build_metadata(data)
+
+        _append_log(job_id, "4️⃣ YouTube 업로드 시도 중...")
+        upload = upload_to_youtube(out_path, title, desc, tags)
+        yt_status = upload.get("status")
+        if yt_status == "success":
+            _append_log(job_id, f"✅ YouTube 업로드 완료!\n🔗 {upload.get('url')}")
+            _save_success_metric(upload.get("video_id", ""), title, upload.get("url", ""))
+        elif yt_status == "auth_required":
+            _append_log(job_id, f"⚠️ YouTube 인증 필요: {upload.get('message', '')}")
+        elif yt_status == "skipped":
+            _append_log(job_id, "💾 YouTube 건너뜀 (Google 패키지 미설치)")
+        else:
+            _append_log(job_id, f"❌ YouTube 업로드 실패: {upload.get('message', '알 수 없는 오류')}")
+
+        _update_job(job_id, status="done", youtube=upload,
+                    content={"title": title, "description": desc, "tags": tags,
+                             "topic_id": topic["id"]})
+
+    except Exception as e:
+        print(f"[ERROR] Infographic job {job_id} 예외: {e}\n{traceback.format_exc()}")
         _append_log(job_id, f"❌ 예외 발생: {e}")
         _update_job(job_id, status="error", error=str(e))
 
@@ -2689,9 +2836,19 @@ def start_long_video():
 
 @app.route("/batch-video", methods=["POST"])
 def batch_video():
-    """배치 영상 제작 (최대 5개, 순차 실행). POST body: {"count": 5}"""
+    """배치 영상 제작 (최대 5개, 순차 실행). POST body: {"count": 5, "include_infographic": false}"""
     data  = request.get_json(silent=True) or {}
     count = min(max(int(data.get("count", 5)), 1), 5)
+
+    job_types = ["shorts"] * count
+    infographic_topic = None
+    if data.get("include_infographic"):
+        infographic_topic = _pick_infographic_topic()
+        if infographic_topic:
+            job_types[0] = "infographic"
+            print(f"[INFO] 배치에 인포그래픽 슬롯 포함: {infographic_topic['id']}")
+        else:
+            print("[INFO] 인포그래픽 토픽 없음(최근 게시 이력 있음/조회 실패) — 전부 shorts로 진행")
 
     job_ids = []
     for i in range(count):
@@ -2708,20 +2865,24 @@ def batch_video():
                 "error":      None,
                 "batch_index": i + 1,
                 "batch_total": count,
+                "job_type":    job_types[i],
             }
         job_ids.append(job_id)
 
-    def _run_batch_sequential(ids):
+    def _run_batch_sequential(ids, types):
         for idx, jid in enumerate(ids):
-            print(f"[BATCH] {idx+1}/{len(ids)} 시작: {jid}")
-            _update_job(jid, logs=[f"🎬 배치 {idx+1}/{len(ids)} 시작..."])
-            _run_video_job(jid)
+            print(f"[BATCH] {idx+1}/{len(ids)} 시작: {jid} (type={types[idx]})")
+            _update_job(jid, logs=[f"🎬 배치 {idx+1}/{len(ids)} 시작... ({types[idx]})"])
+            if types[idx] == "infographic":
+                _run_infographic_job(jid, infographic_topic)
+            else:
+                _run_video_job(jid)
             if idx < len(ids) - 1:
                 print(f"[BATCH] {idx+1} 완료. 30초 후 다음 시작...")
                 time.sleep(30)
         print(f"[BATCH] 전체 {len(ids)}개 완료")
 
-    t = threading.Thread(target=_run_batch_sequential, args=(job_ids,), daemon=True)
+    t = threading.Thread(target=_run_batch_sequential, args=(job_ids, job_types), daemon=True)
     t.start()
     print(f"[INFO] 배치 영상 {count}개 시작: {job_ids}")
 
@@ -2729,6 +2890,7 @@ def batch_video():
         "status":    "queued",
         "batch_size": count,
         "job_ids":   job_ids,
+        "job_types": job_types,
         "message":   f"{count}개 영상 순차 제작 시작 (각 완료 후 30초 간격)",
     }), 202
 

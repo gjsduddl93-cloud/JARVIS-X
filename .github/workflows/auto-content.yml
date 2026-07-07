@@ -34,15 +34,22 @@ jobs:
           echo "❌ 3분 내 헬스체크 실패"
           exit 1
 
-      # ── 3. 배치 영상 3개 시작 ───────────────────────────────────────────────────
+      # ── 3. 배치 영상 3개 시작 (09:00 KST 슬롯에만 인포그래픽 1개 포함) ──────────────
       - name: Start batch (3개)
         id: batch
+        env:
+          SCHEDULE_CRON: ${{ github.event.schedule }}
         run: |
           echo "🎬 배치 영상 제작 시작 (3개)..."
+          INCLUDE_INFO="false"
+          if [ "$SCHEDULE_CRON" = "0 0 * * *" ]; then
+            INCLUDE_INFO="true"
+          fi
+          echo "스케줄: ${SCHEDULE_CRON:-수동 실행}, 인포그래픽 포함: $INCLUDE_INFO"
           RESP=$(curl -sf --max-time 30 \
             -X POST \
             -H "Content-Type: application/json" \
-            -d '{"count":3}' \
+            -d "{\"count\":3,\"include_infographic\":$INCLUDE_INFO}" \
             "${{ secrets.RENDER_URL }}/batch-video")
           echo "Response: $RESP"
 

@@ -184,13 +184,14 @@ def draw_frame(frame_idx, data, max_val):
     return fig
 
 
-def render_frames(data):
-    os.makedirs(FRAMES_DIR, exist_ok=True)
+def render_frames(data, frames_dir=None):
+    frames_dir = frames_dir or FRAMES_DIR
+    os.makedirs(frames_dir, exist_ok=True)
     max_val = max(d["value"] for d in data) * 1.08
 
     for i in range(TOTAL_FRAMES):
         fig = draw_frame(i, data, max_val)
-        frame_path = os.path.join(FRAMES_DIR, f"frame_{i:04d}.png")
+        frame_path = os.path.join(frames_dir, f"frame_{i:04d}.png")
         fig.savefig(frame_path, dpi=DPI)
         plt.close(fig)   # 프레임마다 즉시 해제 — 리스트에 누적 금지
 
@@ -200,34 +201,59 @@ def render_frames(data):
     print(f"[RENDER] 전체 {TOTAL_FRAMES} 프레임 완료")
 
 
-def encode_video():
+def encode_video(frames_dir=None, out_path=None):
+    frames_dir = frames_dir or FRAMES_DIR
+    out_path   = out_path or OUT_MP4
+
     ffmpeg_bin = shutil.which("ffmpeg")
     if not ffmpeg_bin:
         import imageio_ffmpeg
         ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
         print(f"[INFO] 시스템 ffmpeg 없음 — imageio-ffmpeg 번들 바이너리 사용: {ffmpeg_bin}")
 
-    os.makedirs(OUT_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     cmd = [
         ffmpeg_bin, "-y",
         "-framerate", str(FPS),
-        "-i", os.path.join(FRAMES_DIR, "frame_%04d.png"),
+        "-i", os.path.join(frames_dir, "frame_%04d.png"),
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
         "-r", str(FPS),
-        OUT_MP4,
+        out_path,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print("[ERROR] ffmpeg 인코딩 실패")
         print(result.stderr[-3000:])
         raise RuntimeError("ffmpeg encode failed")
-    print(f"[INFO] 인코딩 완료: {OUT_MP4}")
+    print(f"[INFO] 인코딩 완료: {out_path}")
 
 
-def cleanup_frames():
-    if os.path.isdir(FRAMES_DIR):
-        shutil.rmtree(FRAMES_DIR)
-        print(f"[CLEANUP] 임시 프레임 디렉터리 삭제: {FRAMES_DIR}")
+def cleanup_frames(frames_dir=None):
+    frames_dir = frames_dir or FRAMES_DIR
+    if os.path.isdir(frames_dir):
+        shutil.rmtree(frames_dir)
+        print(f"[CLEANUP] 임시 프레임 디렉터리 삭제: {frames_dir}")
+
+
+# ── 소재(토픽) 메타데이터 ────────────────────────────────────────────────
+# 4단계 배치 통합용. 토픽마다 고유 id를 부여해 YouTube 태그에 심어두고,
+# 최근 게시 이력 조회(app.py의 _get_recently_posted_topic_ids)로 중복 게시를 막는다.
+TOPIC_ID = "worldbank_rnd_gdp"
+
+
+def build_metadata(data):
+    """YouTube 업로드용 title/description/tags 생성 (Claude API 호출 없이 결정론적으로 생성)."""
+    lines = "\n".join(f"{d['name']}: {d['value']}%" for d in data)
+    title = "대한민국, OECD 국가 중 R&D 투자 2위 (2023년 기준)"
+    desc = (
+        "국가별 GDP 대비 R&D(연구개발) 투자 비율 비교\n"
+        "출처: World Bank Open Data (GB.XPD.RSDV.GD.ZS, 2023년 기준)\n\n"
+        f"{lines}\n\n"
+        "#인포그래픽 #데이터시각화 #OECD #R&D #통계 #대한민국"
+    )
+    tags = ["인포그래픽", "데이터시각화", "OECD", "R&D", "대한민국", "통계", "AI",
+            f"topic:{TOPIC_ID}"]
+    return title, desc, tags
 
 
 def main():
