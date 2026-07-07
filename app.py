@@ -1542,13 +1542,13 @@ def _pick_infographic_topic():
     return None
 
 
-def upload_to_youtube(video_path, title, description, tags):
+def upload_to_youtube(video_path, title, description, tags, privacy_status="public"):
     if not GOOGLE_AVAILABLE:
         return {"status": "skipped", "message": "google_packages_not_installed"}
 
     file_size = os.path.getsize(video_path) if os.path.exists(video_path) else -1
     print(f"[INFO] upload_to_youtube: 시작 — title={title[:40]!r}, "
-          f"file={video_path}, size={file_size}B")
+          f"file={video_path}, size={file_size}B, privacy={privacy_status}")
 
     if file_size < 0:
         return {"status": "error", "message": f"영상 파일 없음: {video_path}"}
@@ -1569,7 +1569,7 @@ def upload_to_youtube(video_path, title, description, tags):
                 "defaultLanguage": "ko",
             },
             "status": {
-                "privacyStatus":          "public",
+                "privacyStatus":          privacy_status,
                 "selfDeclaredMadeForKids": False,
             },
         }
@@ -2102,7 +2102,7 @@ def _run_video_job(job_id: str) -> None:
         _update_job(job_id, status="error", error=str(e))
 
 
-def _run_infographic_job(job_id: str, topic: dict) -> None:
+def _run_infographic_job(job_id: str, topic: dict, privacy_status: str = "public") -> None:
     """데이터 인포그래픽 영상 제작 파이프라인 - matplotlib 렌더링 + 기존 YouTube 업로드 재사용.
     SEO 제목 최적화/썸네일/Instagram 단계는 아직 포함하지 않음(범위 밖)."""
     proto = topic["module"]
@@ -2133,7 +2133,7 @@ def _run_infographic_job(job_id: str, topic: dict) -> None:
         title, desc, tags = proto.build_metadata(data)
 
         _append_log(job_id, "4️⃣ YouTube 업로드 시도 중...")
-        upload = upload_to_youtube(out_path, title, desc, tags)
+        upload = upload_to_youtube(out_path, title, desc, tags, privacy_status=privacy_status)
         yt_status = upload.get("status")
         if yt_status == "success":
             _append_log(job_id, f"✅ YouTube 업로드 완료!\n🔗 {upload.get('url')}")
@@ -2836,9 +2836,12 @@ def start_long_video():
 
 @app.route("/batch-video", methods=["POST"])
 def batch_video():
-    """배치 영상 제작 (최대 5개, 순차 실행). POST body: {"count": 5, "include_infographic": false}"""
+    """배치 영상 제작 (최대 5개, 순차 실행).
+    POST body: {"count": 5, "include_infographic": false, "infographic_privacy": "public"}
+    infographic_privacy는 인포그래픽 슬롯에만 적용(기본 public, 테스트 시 private/unlisted 지정 가능)."""
     data  = request.get_json(silent=True) or {}
     count = min(max(int(data.get("count", 5)), 1), 5)
+    infographic_privacy = data.get("infographic_privacy", "public")
 
     job_types = ["shorts"] * count
     infographic_topic = None
@@ -2874,7 +2877,7 @@ def batch_video():
             print(f"[BATCH] {idx+1}/{len(ids)} 시작: {jid} (type={types[idx]})")
             _update_job(jid, logs=[f"🎬 배치 {idx+1}/{len(ids)} 시작... ({types[idx]})"])
             if types[idx] == "infographic":
-                _run_infographic_job(jid, infographic_topic)
+                _run_infographic_job(jid, infographic_topic, privacy_status=infographic_privacy)
             else:
                 _run_video_job(jid)
             if idx < len(ids) - 1:
