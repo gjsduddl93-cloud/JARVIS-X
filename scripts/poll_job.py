@@ -27,6 +27,9 @@ while True:
             if yt:
                 print(f"🔗 {yt}")
             sys.exit(0)
+        elif st == "quota_exceeded":
+            print(f"⏸ YouTube 업로드 한도 초과 (콘텐츠는 생성됨): {d.get('error', '')}")
+            sys.exit(0)
         elif st == "error":
             print(f"❌ 실패: {d.get('error', '알 수 없음')}")
             sys.exit(1)

@@ -1596,7 +1596,10 @@ def upload_to_youtube(video_path, title, description, tags, privacy_status="publ
                 body_text = e.content.decode("utf-8", errors="ignore")[:500]
                 print(f"[ERROR] upload_to_youtube HttpError: status={e.resp.status}\n{body_text}")
                 print(traceback.format_exc())
-                return {"status": "error",
+                is_quota = ("uploadLimitExceeded" in body_text
+                            or "quotaExceeded" in body_text
+                            or "dailyLimitExceeded" in body_text)
+                return {"status": "quota_exceeded" if is_quota else "error",
                         "message": f"HTTP {e.resp.status}: {body_text}"}
 
         # 전체 응답 로깅
@@ -2052,12 +2055,10 @@ def _run_video_job(job_id: str) -> None:
                 f"⚠️ YouTube 인증 필요: {upload.get('message', '')}")
         elif yt_status == "skipped":
             _append_log(job_id, "💾 YouTube 건너뜀 (Google 패키지 미설치)")
+        elif yt_status == "quota_exceeded":
+            _append_log(job_id, "⏸ YouTube 일일 업로드 한도 초과 (자정 UTC=09:00 KST 자동 초기화)")
         else:
-            msg = upload.get("message", "알 수 없는 오류")
-            if "uploadLimitExceeded" in msg:
-                _append_log(job_id, "⚠️ YouTube 일일 업로드 한도 초과 (자정 UTC=09:00 KST 자동 초기화)")
-            else:
-                _append_log(job_id, f"❌ YouTube 업로드 실패: {msg}")
+            _append_log(job_id, f"❌ YouTube 업로드 실패: {upload.get('message', '알 수 없는 오류')}")
 
         # Step 4: YouTube 메타 최적화 (업로드 성공 시에만)
         meta_result = {}
@@ -2096,8 +2097,15 @@ def _run_video_job(job_id: str) -> None:
         else:
             _append_log(job_id, f"📱 Instagram: {ig_result.get('message','')}")
 
-        _update_job(job_id, status="done", youtube=upload,
-                    youtube_meta=meta_result, instagram=ig_result)
+        if yt_status in ("success", "skipped"):
+            final_status = "done"
+        elif yt_status == "quota_exceeded":
+            final_status = "quota_exceeded"
+        else:
+            final_status = "error"
+        _update_job(job_id, status=final_status, youtube=upload,
+                    youtube_meta=meta_result, instagram=ig_result,
+                    error=None if final_status == "done" else upload.get("message", "YouTube 업로드 실패"))
 
     except Exception as e:
         print(f"[ERROR] Job {job_id} 예외: {e}\n{traceback.format_exc()}")
@@ -2150,9 +2158,16 @@ def _run_infographic_job(job_id: str, topic: dict, privacy_status: str = "public
         else:
             _append_log(job_id, f"❌ YouTube 업로드 실패: {upload.get('message', '알 수 없는 오류')}")
 
-        _update_job(job_id, status="done", youtube=upload,
+        if yt_status in ("success", "skipped"):
+            final_status = "done"
+        elif yt_status == "quota_exceeded":
+            final_status = "quota_exceeded"
+        else:
+            final_status = "error"
+        _update_job(job_id, status=final_status, youtube=upload,
                     content={"title": title, "description": desc, "tags": tags,
-                             "topic_id": topic["id"]})
+                             "topic_id": topic["id"]},
+                    error=None if final_status == "done" else upload.get("message", "YouTube 업로드 실패"))
 
     except Exception as e:
         print(f"[ERROR] Infographic job {job_id} 예외: {e}\n{traceback.format_exc()}")
@@ -2225,7 +2240,14 @@ def _run_long_video_job(job_id: str) -> None:
             else:
                 _append_log(job_id, f"⚠️ 메타 업데이트 실패: {meta_result.get('message','')}")
 
-        _update_job(job_id, status="done", youtube=upload, youtube_meta=meta_result)
+        if yt_status in ("success", "skipped"):
+            final_status = "done"
+        elif yt_status == "quota_exceeded":
+            final_status = "quota_exceeded"
+        else:
+            final_status = "error"
+        _update_job(job_id, status=final_status, youtube=upload, youtube_meta=meta_result,
+                    error=None if final_status == "done" else upload.get("message", "YouTube 업로드 실패"))
 
     except Exception as e:
         print(f"[ERROR] Long video job {job_id} 예외: {e}\n{traceback.format_exc()}")
@@ -3348,6 +3370,7 @@ def stats():
     total   = len(jobs_today)
     done    = sum(1 for j in jobs_today if j.get("status") == "done")
     error   = sum(1 for j in jobs_today if j.get("status") == "error")
+    quota_exceeded = sum(1 for j in jobs_today if j.get("status") == "quota_exceeded")
     running = sum(1 for j in jobs_today if j.get("status") == "running")
     queued  = sum(1 for j in jobs_today if j.get("status") == "queued")
     yt_ok   = sum(1 for j in jobs_today
@@ -3359,6 +3382,7 @@ def stats():
         "done":             done,
         "youtube_uploaded": yt_ok,
         "error":            error,
+        "quota_exceeded":   quota_exceeded,
         "running":          running,
         "queued":           queued,
         "all_jobs_count":   len(_jobs),
