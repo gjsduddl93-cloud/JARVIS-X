@@ -1,13 +1,17 @@
 """
 YouTube OAuth 인증 공용 헬퍼.
-app.py가 Render에서 하는 것과 동일하게 YOUTUBE_TOKEN_JSON 환경변수를
-로컬 youtube_token.json 파일로 부트스트랩하고, OAuth 자격증명을 우선 사용해
-YouTube 클라이언트를 생성한다. OAuth 토큰이 없으면 developer_key(API 키)로 폴백한다.
+app.py가 Render에서 하는 것과 동일한 방식: YOUTUBE_TOKEN_JSON 환경변수를
+로컬 youtube_token.json 파일로 부트스트랩하고, Credentials.from_authorized_user_file()로
+토큰 파일에 내장된 client_id/secret을 그대로 사용한다(별도 CLIENT_ID/SECRET 불필요).
+OAuth 토큰이 없으면 developer_key(API 키)로 폴백한다.
 """
 import os
 import json
 
+from google.oauth2.credentials import Credentials
+
 TOKEN_FILE = os.path.join(os.path.dirname(__file__), "..", "youtube_token.json")
+YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube"]
 
 
 def bootstrap_token_file() -> bool:
@@ -28,20 +32,11 @@ def bootstrap_token_file() -> bool:
 
 
 def get_youtube_client(developer_key: str | None = None):
-    """OAuth 토큰이 있으면 OAuth로, 없으면 developer_key로 클라이언트 생성. 둘 다 없으면 None."""
+    """OAuth 토큰이 있으면 토큰에 내장된 자격증명으로, 없으면 developer_key로 클라이언트 생성. 둘 다 없으면 None."""
     import googleapiclient.discovery as gd
 
     if bootstrap_token_file():
-        from google.oauth2.credentials import Credentials
-
-        token_data = json.loads(open(TOKEN_FILE, encoding="utf-8").read())
-        creds = Credentials(
-            token=token_data.get("token"),
-            refresh_token=token_data.get("refresh_token"),
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=os.getenv("YOUTUBE_CLIENT_ID"),
-            client_secret=os.getenv("YOUTUBE_CLIENT_SECRET"),
-        )
+        creds = Credentials.from_authorized_user_file(TOKEN_FILE, YOUTUBE_SCOPES)
         return gd.build("youtube", "v3", credentials=creds)
 
     if developer_key:
