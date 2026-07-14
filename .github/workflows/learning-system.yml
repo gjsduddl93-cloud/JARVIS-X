@@ -1,5 +1,8 @@
 name: Daily Learning System
 
+permissions:
+  contents: write
+
 on:
   schedule:
     - cron: '0 9 * * *'   # 18:00 KST - 트렌딩 수집
