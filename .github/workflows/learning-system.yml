@@ -40,8 +40,9 @@ jobs:
       - name: Step 1 - Collect viral data (18:00 KST)
         if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 9 * * *'
         env:
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          GOOGLE_API_KEY:  ${{ secrets.GOOGLE_API_KEY }}
+          YOUTUBE_TOKEN_JSON:    ${{ secrets.YOUTUBE_TOKEN_JSON }}
+          YOUTUBE_CLIENT_ID:     ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
         run: |
           echo "🔍 트렌딩 Shorts 수집 시작..."
           python scripts/1_collect_viral_data.py
@@ -60,10 +61,9 @@ jobs:
       - name: Step 3 - Learn from success (23:00 KST)
         if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 14 * * *'
         env:
-          YOUTUBE_API_KEY:      ${{ secrets.YOUTUBE_API_KEY }}
-          GOOGLE_API_KEY:       ${{ secrets.GOOGLE_API_KEY }}
-          GOOGLE_CLIENT_ID:     ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          YOUTUBE_TOKEN_JSON:    ${{ secrets.YOUTUBE_TOKEN_JSON }}
+          YOUTUBE_CLIENT_ID:     ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
         run: |
           echo "📊 자체 영상 성과 학습 시작..."
           python scripts/3_learn_success.py

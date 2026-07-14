@@ -10,6 +10,8 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 
+from youtube_auth import get_youtube_client
+
 load_dotenv()
 
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY") or os.getenv("GOOGLE_API_KEY")
@@ -22,13 +24,11 @@ OUT_FILE = os.path.join(DATA_DIR, f"trending_data_{TODAY}.json")
 
 def fetch_trending_shorts(max_results: int = 50) -> list:
     """YouTube Data API v3로 한국 트렌딩 Shorts 수집."""
-    if not YOUTUBE_API_KEY:
-        print("[WARN] YOUTUBE_API_KEY 없음 - 더미 데이터 사용")
-        return _dummy_data()
-
     try:
-        import googleapiclient.discovery as gd
-        yt = gd.build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+        yt = get_youtube_client(developer_key=YOUTUBE_API_KEY)
+        if yt is None:
+            print("[WARN] YouTube 인증 수단 없음(OAuth 토큰/API 키 모두 없음) - 더미 데이터 사용")
+            return _dummy_data()
 
         # 트렌딩 영상 검색 (Shorts = 60초 이하)
         req = yt.search().list(

@@ -10,10 +10,11 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 
+from youtube_auth import get_youtube_client
+
 load_dotenv()
 
 YOUTUBE_API_KEY   = os.getenv("YOUTUBE_API_KEY") or os.getenv("GOOGLE_API_KEY")
-YOUTUBE_TOKEN_FILE = os.path.join(os.path.dirname(__file__), "..", "youtube_token.json")
 METRICS_FILE      = os.path.join(os.path.dirname(__file__), "..", "data", "success_metrics.json")
 PATTERNS_FILE     = os.path.join(os.path.dirname(__file__), "..", "data", "viral_patterns.json")
 
@@ -22,30 +23,11 @@ TODAY = datetime.now().strftime("%Y%m%d")
 
 def get_channel_videos() -> list:
     """자체 채널 업로드 영상 목록 + 통계 조회."""
-    if not YOUTUBE_API_KEY:
-        print("[WARN] YOUTUBE_API_KEY 없음 - 저장된 metrics 유지")
-        return []
-
     try:
-        import googleapiclient.discovery as gd
-        from google.oauth2.credentials import Credentials
-
-        creds = None
-        if os.path.exists(YOUTUBE_TOKEN_FILE):
-            import json as _json
-            token_data = _json.loads(open(YOUTUBE_TOKEN_FILE).read())
-            creds = Credentials(
-                token=token_data.get("token"),
-                refresh_token=token_data.get("refresh_token"),
-                token_uri="https://oauth2.googleapis.com/token",
-                client_id=os.getenv("GOOGLE_CLIENT_ID"),
-                client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
-            )
-
-        if creds:
-            yt = gd.build("youtube", "v3", credentials=creds)
-        else:
-            yt = gd.build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+        yt = get_youtube_client(developer_key=YOUTUBE_API_KEY)
+        if yt is None:
+            print("[WARN] YouTube 인증 수단 없음(OAuth 토큰/API 키 모두 없음) - 저장된 metrics 유지")
+            return []
 
         # 채널 ID 조회
         ch_resp = yt.channels().list(part="id,statistics", mine=True).execute()
