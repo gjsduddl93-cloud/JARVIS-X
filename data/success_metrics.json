@@ -1,8 +1,460 @@
 {
-  "updated_at": "2026-06-30",
-  "total_videos": 0,
+  "updated_at": "20260714",
+  "total_videos": 50,
   "avg_views": 0,
-  "avg_likes": 0,
+  "max_views": 2,
   "success_threshold": 10000,
-  "videos": {}
+  "success_count": 0,
+  "videos": {
+    "FUaUwmMsOFs": {
+      "title": "❌ AI 자동 업로드 하지마세요 (이걸 모르면 수익 0원)",
+      "published_at": "2026-07-13T18:23:15Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=FUaUwmMsOFs",
+      "tracked_at": "20260714"
+    },
+    "5QXWUz8nfMY": {
+      "title": "❌ ChatGPT 이렇게 쓰면 바보입니다 💸 하루 2시간 업무를 20분에 끝내는 AI 부업 비법",
+      "published_at": "2026-07-13T18:22:34Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=5QXWUz8nfMY",
+      "tracked_at": "20260714"
+    },
+    "TNyXzA6ecjA": {
+      "title": "❌ AI채널 함부로 시작하지마세요 (월 50만원 버는 완전자동 운영법 공개)",
+      "published_at": "2026-07-13T18:20:49Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=TNyXzA6ecjA",
+      "tracked_at": "20260714"
+    },
+    "xickWo0Ln3c": {
+      "title": "❌ ChatGPT 질문만 하지마세요💰 프롬프트 3개로 월 30만원 버는 직장인들의 비밀",
+      "published_at": "2026-07-13T17:25:39Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=xickWo0Ln3c",
+      "tracked_at": "20260714"
+    },
+    "GTgk5Cr5UUA": {
+      "title": "❌ AI 부업 아직도 이렇게 하세요? 월 50만원 놓치는 중입니다",
+      "published_at": "2026-07-13T17:24:08Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=GTgk5Cr5UUA",
+      "tracked_at": "20260714"
+    },
+    "UkhQT3AW45Q": {
+      "title": "❌ AI 시대에 이 직업 포기하지마세요💰 2026년 대체율 3% 미만 직업 3가지",
+      "published_at": "2026-07-13T17:22:52Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=UkhQT3AW45Q",
+      "tracked_at": "20260714"
+    },
+    "TtwYYE6P2gQ": {
+      "title": "❌ 야근하지 마세요 🤖 AI 쓰면 4시간 업무가 **15분**…월 30만원 부업까지 됩니다",
+      "published_at": "2026-07-13T13:44:14Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=TtwYYE6P2gQ",
+      "tracked_at": "20260714"
+    },
+    "s7z8YQuRJSk": {
+      "title": "❌ ChatGPT로 부업하면 손해입니다 (Claude 쓴 사람은 월 47만원, 당신은?)",
+      "published_at": "2026-07-13T13:43:10Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=s7z8YQuRJSk",
+      "tracked_at": "20260714"
+    },
+    "Z7-zzrUE5xg": {
+      "title": "❌ AI창업 99% 망하는 이유💀 성공한 1%는 이것부터 했다",
+      "published_at": "2026-07-13T13:41:39Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=Z7-zzrUE5xg",
+      "tracked_at": "20260714"
+    },
+    "-lCDdCzij80": {
+      "title": "❌ AI 부업 이렇게 하면 월급보다 더 법니다💰 (직장인이 하루 2시간으로 월 300만원 번 방법)",
+      "published_at": "2026-07-13T12:44:57Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=-lCDdCzij80",
+      "tracked_at": "20260714"
+    },
+    "Ou_6FZo9Y4w": {
+      "title": "❌ 이 부업 포기하지마세요 💰 AI 시대에도 월 300만원 버는 직업 3가지 (2026년 실화)",
+      "published_at": "2026-07-13T12:43:33Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=Ou_6FZo9Y4w",
+      "tracked_at": "20260714"
+    },
+    "GaCrTK7khE4": {
+      "title": "❌ 아직도 직접 블로그 써요? AI가 대신 쓰고 월 300만원 버는 시대💰",
+      "published_at": "2026-07-13T12:42:08Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=GaCrTK7khE4",
+      "tracked_at": "20260714"
+    },
+    "VUU0DVHN52U": {
+      "title": "❌ AI 부업 절대 하지 마세요 (월 47만원 번 직장인이 숨긴 3가지 루틴)",
+      "published_at": "2026-07-13T11:48:12Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=VUU0DVHN52U",
+      "tracked_at": "20260714"
+    },
+    "0L32Op8UYXE": {
+      "title": "❌ 이 직업 당장 그만두세요 (AI가 800만 개 없앴습니다)",
+      "published_at": "2026-07-13T11:46:55Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=0L32Op8UYXE",
+      "tracked_at": "20260714"
+    },
+    "jdVOxsrXshw": {
+      "title": "대한민국, OECD 국가 중 첨단기술 수출 비중 4위 (2024년 기준)",
+      "published_at": "2026-07-13T11:45:16Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=jdVOxsrXshw",
+      "tracked_at": "20260714"
+    },
+    "9dSJjn_hJ8w": {
+      "title": "❌ AI 부업 이렇게 시작하면 월수익 0원입니다 💸",
+      "published_at": "2026-07-12T15:43:17Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=9dSJjn_hJ8w",
+      "tracked_at": "20260714"
+    },
+    "vM_N_hXJoGQ": {
+      "title": "❌ AI 부업 절대 믿지 마세요 (월 200만원 번 사람 직접 검증했습니다)",
+      "published_at": "2026-07-12T15:41:59Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=vM_N_hXJoGQ",
+      "tracked_at": "20260714"
+    },
+    "sc8IWN8dgCg": {
+      "title": "❌ AI 채널 지금 시작하지 마세요 (월 500만원 버는 방법 먼저 보고 하세요)",
+      "published_at": "2026-07-12T15:40:31Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=sc8IWN8dgCg",
+      "tracked_at": "20260714"
+    },
+    "N9yw3POYvGk": {
+      "title": "❌ AI 도구 이렇게 고르면 월 50만원 날립니다 💸",
+      "published_at": "2026-07-12T12:12:25Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=N9yw3POYvGk",
+      "tracked_at": "20260714"
+    },
+    "8yHG5Nof_Fg": {
+      "title": "❌ ChatGPT로 돈 버는 사람 없어요💀 Claude 쓴 사람만 월 47만원 찍힌 이유",
+      "published_at": "2026-07-12T12:11:03Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=8yHG5Nof_Fg",
+      "tracked_at": "20260714"
+    },
+    "hcDnUnFPsLg": {
+      "title": "❌ AI 부업 월 300만원? 이 실수 하나가 다 망칩니다",
+      "published_at": "2026-07-12T12:09:57Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=hcDnUnFPsLg",
+      "tracked_at": "20260714"
+    },
+    "3jyIBhpZkws": {
+      "title": "❌ AI 부업 이렇게 하면 월 0원입니다💸 3시간 세팅으로 매달 50만원 버는 방법 따로 있어요",
+      "published_at": "2026-07-12T11:03:55Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=3jyIBhpZkws",
+      "tracked_at": "20260714"
+    },
+    "q2R_ToxtILw": {
+      "title": "❌ AI 유튜브 채널로 수익 내려다 이것 모르면 망합니다 💸",
+      "published_at": "2026-07-12T11:02:28Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=q2R_ToxtILw",
+      "tracked_at": "20260714"
+    },
+    "sFLduTSZsNw": {
+      "title": "❌ ChatGPT 이렇게 쓰면 손해예요💸 프롬프트 1개로 월 90만원 버는 진짜 방법",
+      "published_at": "2026-07-12T11:01:11Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=sFLduTSZsNw",
+      "tracked_at": "20260714"
+    },
+    "dL7O4bsBKTM": {
+      "title": "❌ 이 AI도구 쓰면 수익 0원입니다 (월 50만원 버는 사람들은 딱 3개만 써요)",
+      "published_at": "2026-07-12T09:37:17Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=dL7O4bsBKTM",
+      "tracked_at": "20260714"
+    },
+    "TxLh0_9BaUM": {
+      "title": "❌ AI 채널 만들지 마세요 — 구독자 0명도 월 30만원 버는 거 보고 따라하면 큰일 납니다",
+      "published_at": "2026-07-12T09:35:45Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=TxLh0_9BaUM",
+      "tracked_at": "20260714"
+    },
+    "XfaDAV9x20A": {
+      "title": "❌ AI 부업 이렇게 시작하지마세요💸 3개월 만에 월 300 버는 사람들은 이것부터 했습니다",
+      "published_at": "2026-07-12T09:34:20Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=XfaDAV9x20A",
+      "tracked_at": "20260714"
+    },
+    "Kw0BX9fiia8": {
+      "title": "❌ AI 부업 이렇게 시작하면 99% 실패합니다💸 (월 100만원 버는 사람들의 공통점)",
+      "published_at": "2026-07-12T07:54:55Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=Kw0BX9fiia8",
+      "tracked_at": "20260714"
+    },
+    "1q_XQslht7Y": {
+      "title": "❌ AI 부업 월 300만원? 직장인이 절대 하면 안 되는 실수💰",
+      "published_at": "2026-07-12T07:53:36Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=1q_XQslht7Y",
+      "tracked_at": "20260714"
+    },
+    "hSsto_uCiPo": {
+      "title": "대한민국, OECD 국가 중 R&D 투자 2위 (2023년 기준)",
+      "published_at": "2026-07-12T07:52:04Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=hSsto_uCiPo",
+      "tracked_at": "20260714"
+    },
+    "LQILgcUvPhI": {
+      "title": "❌ ChatGPT 이렇게 쓰면 손해예요💸 블로그 글 하루 20개 자동화로 월 150만원 버는 진짜 방법",
+      "published_at": "2026-07-11T15:36:45Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=LQILgcUvPhI",
+      "tracked_at": "20260714"
+    },
+    "t0guAaWG0Sc": {
+      "title": "❌ AI 부업 이렇게 시작하면 한 달 수익 0원💸 콘텐츠 자동화로 월 35만원 번 방법 공개",
+      "published_at": "2026-07-11T15:35:20Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=t0guAaWG0Sc",
+      "tracked_at": "20260714"
+    },
+    "ia6Lg8ppPrM": {
+      "title": "❌ AI 부업 절대 무시하지 마세요 💸 하루 20개 자동 글쓰기로 월 300만원 수익 실화",
+      "published_at": "2026-07-11T15:34:21Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=ia6Lg8ppPrM",
+      "tracked_at": "20260714"
+    },
+    "U6fr1YTYT_M": {
+      "title": "❌ 이 부업 포기하지마세요 AI도 못 뺏는 월 300만원 직업 3개 (2026년에도 살아남음)",
+      "published_at": "2026-07-11T12:09:01Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=U6fr1YTYT_M",
+      "tracked_at": "20260714"
+    },
+    "MjetqCsBkHE": {
+      "title": "❌ AI 부업 이렇게 하면 월 0원입니다 (ChatGPT로 하루 30분만 바꿔도 수익 10배)",
+      "published_at": "2026-07-11T12:07:54Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=MjetqCsBkHE",
+      "tracked_at": "20260714"
+    },
+    "tA3BkqyVLfI": {
+      "title": "❌ ChatGPT 이렇게 쓰면 수익 0원💸 하루 30분으로 월 100만원 버는 진짜 방법",
+      "published_at": "2026-07-11T12:06:52Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=tA3BkqyVLfI",
+      "tracked_at": "20260714"
+    },
+    "MNOUgVPatZ0": {
+      "title": "❌ 야근하는 직장인들 이거 모르면 손해입니다 🤖 AI로 하루 3시간 줄이고 월 30만원 부업 수익 챙기는 법",
+      "published_at": "2026-07-11T10:41:03Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=MNOUgVPatZ0",
+      "tracked_at": "20260714"
+    },
+    "3jG8SVjIqo0": {
+      "title": "❌ AI 창업 지금 하지마세요💰 2026년 3가지 툴로 월 300만원 버는 법 (90%가 모르는 진짜 방법)",
+      "published_at": "2026-07-11T10:39:44Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=3jG8SVjIqo0",
+      "tracked_at": "20260714"
+    },
+    "JozYfhHwQy0": {
+      "title": "❌ ChatGPT 질문만 하지마세요 💰 프롬프트 3줄 바꿨더니 월 30만원 부업 생겼습니다",
+      "published_at": "2026-07-11T10:38:21Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=JozYfhHwQy0",
+      "tracked_at": "20260714"
+    },
+    "vg_2uMX3pvM": {
+      "title": "❌ 무자본 AI 부업 절대 하지마세요 (월 300만원 버는 사람들 비밀 먼저 보세요)",
+      "published_at": "2026-07-11T09:11:48Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=vg_2uMX3pvM",
+      "tracked_at": "20260714"
+    },
+    "7h7TGOz1Rr8": {
+      "title": "❌ 이 직업 절대 포기하지마세요 💰 AI 대체율 3% 미만… 2026년에도 살아남는 직업 있습니다",
+      "published_at": "2026-07-11T09:10:19Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=7h7TGOz1Rr8",
+      "tracked_at": "20260714"
+    },
+    "00HWVKJQIAw": {
+      "title": "❌ AI 에이전트 혼자 쓰지 마세요 (설정 1번으로 하루 10만원 자동수익 나오는 거 알고 쓰세요)",
+      "published_at": "2026-07-11T09:08:57Z",
+      "views": 1,
+      "likes": 0,
+      "like_ratio": 0.0,
+      "url": "https://youtube.com/watch?v=00HWVKJQIAw",
+      "tracked_at": "20260714"
+    },
+    "kQpu6JER1N8": {
+      "title": "❌ AI 채널 이렇게 시작하면 수익 0원입니다 💸",
+      "published_at": "2026-07-10T18:12:30Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=kQpu6JER1N8",
+      "tracked_at": "20260714"
+    },
+    "EjGAFoyd-X8": {
+      "title": "❌ AI 부업 이렇게 시작하면 월 300만원 날립니다 💸",
+      "published_at": "2026-07-10T18:11:10Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=EjGAFoyd-X8",
+      "tracked_at": "20260714"
+    },
+    "eeOQUnRKUHM": {
+      "title": "❌ AI 부업 이렇게 시작하면 월 300만원 날립니다💸",
+      "published_at": "2026-07-10T18:09:46Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=eeOQUnRKUHM",
+      "tracked_at": "20260714"
+    },
+    "zpGNQ8qrkD0": {
+      "title": "❌ AI영상 혼자 만들면 월 50만원 그냥 날립니다💸",
+      "published_at": "2026-07-10T16:42:13Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=zpGNQ8qrkD0",
+      "tracked_at": "20260714"
+    },
+    "atyC4cZV32A": {
+      "title": "월 300만원 버는 직장인이 AI한테 돈 버는 법 배웠다고?😱 실제 수익 인증 공개",
+      "published_at": "2026-07-10T16:41:44Z",
+      "views": 2,
+      "likes": 0,
+      "like_ratio": 0.0,
+      "url": "https://youtube.com/watch?v=atyC4cZV32A",
+      "tracked_at": "20260714"
+    },
+    "rxrwhnheFA4": {
+      "title": "❌ AI 부업 이렇게 하면 월 300만원 날립니다💸 (2026년 실제 사례)",
+      "published_at": "2026-07-10T16:40:41Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=rxrwhnheFA4",
+      "tracked_at": "20260714"
+    },
+    "24OURMZja0k": {
+      "title": "❌ AI 채널 절대 혼자 운영하지 마세요 (AI가 대신 돈 벌어줍니다)",
+      "published_at": "2026-07-10T16:39:02Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=24OURMZja0k",
+      "tracked_at": "20260714"
+    },
+    "8XlUIXhmwwQ": {
+      "title": "❌ 직장인 10명 중 8명 모르는 AI 부업 💰 월 30만원 버는 사람들 비밀",
+      "published_at": "2026-07-10T13:32:07Z",
+      "views": 0,
+      "likes": 0,
+      "like_ratio": 0,
+      "url": "https://youtube.com/watch?v=8XlUIXhmwwQ",
+      "tracked_at": "20260714"
+    }
+  }
 }

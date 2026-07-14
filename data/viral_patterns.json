@@ -1,35 +1,110 @@
 {
-  "updated_at": "2026-06-30",
-  "version": 1,
+  "updated_at": "20260714",
+  "version": 2,
   "title_patterns": [
     {
-      "pattern": "❌ [주제] 하지마세요",
+      "pattern": "캐릭터/인물 + 재미있는 반전 (Real End Twist 등)",
+      "reason": "예측 불가능한 결말이 높은 참여도 유도 (Tom&Jerry 영상 2개 상위권)",
+      "example": "Tom🍓Jerry Real End Twist 😂 [반전 스포일러]",
       "click_rate": 0.35,
       "avg_views": 150000,
       "frequency": "high",
-      "weekday_best": [0, 1]
+      "weekday_best": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
     },
     {
-      "pattern": "[숫자]분 안에 [행동] 하는 법",
-      "click_rate": 0.28,
-      "avg_views": 120000,
+      "pattern": "[주제] + 이모지 + 감정 표현 (❌ 하면 안 된다, 😂 웃음 반응)",
+      "reason": "이모지로 시각적 강조 및 감정 전달로 클릭 욕구 증대",
+      "example": "❌ 집에만 있으면 안 돼! 😂 #Shorts",
+      "click_rate": 0.3,
+      "avg_views": 130000,
       "frequency": "medium",
-      "weekday_best": [2, 3]
+      "weekday_best": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
     },
     {
-      "pattern": "AI가 알려주는 [주제] 비법",
-      "click_rate": 0.22,
-      "avg_views": 90000,
-      "frequency": "medium",
-      "weekday_best": [4, 5, 6]
+      "pattern": "DIY/요리 콘텐츠 + 과정 영상 (clay waffle, making 등)",
+      "reason": "따라 하고 싶은 욕구 + 시각적 만족도 높음 (3위, 8위 상위권)",
+      "example": "찰흙 와플 만들기 | 5분 안에 완성! #shorts",
+      "click_rate": 0.25,
+      "avg_views": 110000,
+      "frequency": "low",
+      "weekday_best": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
     }
   ],
   "trending_keywords": [
-    {"keyword": "수익", "weight": 1.5, "views_boost": 2.0},
-    {"keyword": "AI", "weight": 1.3, "views_boost": 1.8},
-    {"keyword": "부업", "weight": 1.4, "views_boost": 1.9},
-    {"keyword": "자동화", "weight": 1.2, "views_boost": 1.5},
-    {"keyword": "무료", "weight": 1.1, "views_boost": 1.3}
+    {
+      "keyword": "수익",
+      "weight": 1.5,
+      "views_boost": 2.0
+    },
+    {
+      "keyword": "부업",
+      "weight": 1.4,
+      "views_boost": 1.9
+    },
+    {
+      "keyword": "AI",
+      "weight": 1.3,
+      "views_boost": 1.8
+    },
+    {
+      "keyword": "자동화",
+      "weight": 1.2,
+      "views_boost": 1.5
+    },
+    {
+      "keyword": "반전",
+      "weight": 1.2,
+      "views_boost": 1.4
+    },
+    {
+      "keyword": "캐릭터 모방",
+      "weight": 1.2,
+      "views_boost": 1.4
+    },
+    {
+      "keyword": "DIY/수공예",
+      "weight": 1.2,
+      "views_boost": 1.4
+    },
+    {
+      "keyword": "형제자매/관계",
+      "weight": 1.2,
+      "views_boost": 1.4
+    },
+    {
+      "keyword": "애니메이션 밈",
+      "weight": 1.2,
+      "views_boost": 1.4
+    },
+    {
+      "keyword": "무료",
+      "weight": 1.1,
+      "views_boost": 1.3
+    }
   ],
   "optimal_length": "35-45초",
   "best_posting_times": {
@@ -42,10 +117,33 @@
     "6": "21:00"
   },
   "success_themes": [
-    {"theme": "부업/수익", "success_rate": 0.68, "avg_views": 180000},
-    {"theme": "AI/기술", "success_rate": 0.52, "avg_views": 130000},
-    {"theme": "자기계발", "success_rate": 0.45, "avg_views": 95000},
-    {"theme": "정보", "success_rate": 0.38, "avg_views": 70000}
+    {
+      "theme": "부업/수익",
+      "success_rate": 0.68,
+      "avg_views": 180000
+    },
+    {
+      "theme": "AI/기술",
+      "success_rate": 0.52,
+      "avg_views": 130000
+    },
+    {
+      "theme": "자기계발",
+      "success_rate": 0.45,
+      "avg_views": 95000
+    },
+    {
+      "theme": "정보",
+      "success_rate": 0.38,
+      "avg_views": 70000
+    }
   ],
-  "prompt_boost": "오늘의 학습 데이터: 초기 상태 (수집 시작 전)"
+  "prompt_boost": "반전과 이모지 활용, 캐릭터/DIY 주제로 클릭욕 높은 제목 제작",
+  "hot_categories": [
+    "엔터테인먼트/반전 콘텐츠",
+    "키즈/가족 친화 콘텐츠",
+    "DIY/수공예/요리"
+  ],
+  "today_prompt": "오늘(화) 최적 제목 패턴: 캐릭터/인물 + 재미있는 반전 (Real End Twist 등) | 우선 키워드: 수익, 부업, AI | 트렌딩 카테고리: 엔터테인먼트/반전 콘텐츠, 키즈/가족 친화 콘텐츠 | 반전과 이모지 활용, 캐릭터/DIY 주제로 클릭욕 높은 제목 제작",
+  "today_weekday": "화"
 }

@@ -1,0 +1,35 @@
+{
+  "date": "20260714",
+  "analysis": {
+    "top_patterns": [
+      {
+        "pattern": "캐릭터/인물 + 재미있는 반전 (Real End Twist 등)",
+        "reason": "예측 불가능한 결말이 높은 참여도 유도 (Tom&Jerry 영상 2개 상위권)",
+        "example": "Tom🍓Jerry Real End Twist 😂 [반전 스포일러]"
+      },
+      {
+        "pattern": "[주제] + 이모지 + 감정 표현 (❌ 하면 안 된다, 😂 웃음 반응)",
+        "reason": "이모지로 시각적 강조 및 감정 전달로 클릭 욕구 증대",
+        "example": "❌ 집에만 있으면 안 돼! 😂 #Shorts"
+      },
+      {
+        "pattern": "DIY/요리 콘텐츠 + 과정 영상 (clay waffle, making 등)",
+        "reason": "따라 하고 싶은 욕구 + 시각적 만족도 높음 (3위, 8위 상위권)",
+        "example": "찰흙 와플 만들기 | 5분 안에 완성! #shorts"
+      }
+    ],
+    "hot_keywords": [
+      "반전",
+      "캐릭터 모방",
+      "DIY/수공예",
+      "형제자매/관계",
+      "애니메이션 밈"
+    ],
+    "top_categories": [
+      "엔터테인먼트/반전 콘텐츠",
+      "키즈/가족 친화 콘텐츠",
+      "DIY/수공예/요리"
+    ],
+    "prompt_boost": "반전과 이모지 활용, 캐릭터/DIY 주제로 클릭욕 높은 제목 제작"
+  }
+}
