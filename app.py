@@ -128,6 +128,55 @@ def _save_success_metric(video_id: str, title: str, youtube_url: str) -> None:
     except Exception as e:
         print(f"[WARN] success_metrics 저장 실패: {e}")
 
+# ── 배경 클립 재사용 방지 (Coverr/Pexels) ────────────────────────────────────
+# Render는 재시작/재배포마다 로컬 파일이 사라지지만, 같은 프로세스가 살아있는 동안
+# (하루 여러 배치가 도는 구간)은 이 파일로 최근 사용 클립을 기억해 반복을 줄인다.
+_RECENT_CLIPS_FILE = os.path.join(DATA_DIR, "recent_clips.json")
+_RECENT_CLIPS_MAX  = 300  # 최근 사용 클립 ID 기억 개수(대략 며칠 분)
+
+def _load_recent_clip_ids() -> list:
+    try:
+        with open(_RECENT_CLIPS_FILE, encoding="utf-8") as f:
+            return json.load(f).get("ids", [])
+    except Exception:
+        return []
+
+def _save_recent_clip_ids(ids: list) -> None:
+    try:
+        with open(_RECENT_CLIPS_FILE, "w", encoding="utf-8") as f:
+            json.dump({"ids": ids[-_RECENT_CLIPS_MAX:]}, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"[WARN] recent_clips 저장 실패: {e}")
+
+# ── 제목 템플릿 로테이션 (학습 패턴 쏠림 방지) ────────────────────────────────
+_RECENT_TITLE_PATTERNS_FILE = os.path.join(DATA_DIR, "recent_title_patterns.json")
+TITLE_PATTERN_COOLDOWN = 2  # 최근 사용한 템플릿 N개는 당분간 재사용하지 않음
+
+def _load_recent_title_patterns() -> list:
+    try:
+        with open(_RECENT_TITLE_PATTERNS_FILE, encoding="utf-8") as f:
+            return json.load(f).get("patterns", [])
+    except Exception:
+        return []
+
+def _save_recent_title_patterns(patterns: list) -> None:
+    try:
+        with open(_RECENT_TITLE_PATTERNS_FILE, "w", encoding="utf-8") as f:
+            json.dump({"patterns": patterns[-20:]}, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"[WARN] recent_title_patterns 저장 실패: {e}")
+
+def _pick_title_pattern(top_patterns: list) -> dict:
+    """최근 TITLE_PATTERN_COOLDOWN개 사용한 템플릿은 제외하고 click_rate 가중 랜덤 선택.
+    쿨다운 적용 후 남는 패턴이 없으면(풀이 작을 때) 쿨다운 없이 전체 풀에서 선택."""
+    recent = _load_recent_title_patterns()
+    cooldown_set = set(recent[-TITLE_PATTERN_COOLDOWN:])
+    pool = [p for p in top_patterns if p.get("pattern") not in cooldown_set] or top_patterns
+    weights = [max(p.get("click_rate", 0.1), 0.01) for p in pool]
+    chosen = random.choices(pool, weights=weights, k=1)[0]
+    _save_recent_title_patterns(recent + [chosen.get("pattern", "")])
+    return chosen
+
 # ── 백그라운드 작업 저장소 ────────────────────────────────────────────────────
 # { job_id: {status, logs, content, video_path, youtube, error, created_at} }
 _jobs: dict = {}
@@ -1859,8 +1908,9 @@ def video_package_json():
         hot_cats     = vp.get("hot_categories", [])
 
         if top_patterns:
-            best_ex = top_patterns[0].get("example", top_patterns[0].get("pattern", ""))
-            learned_hint += f"\n학습된 최고 제목 형식: {top_patterns[0].get('pattern','')} (예: {best_ex})"
+            chosen_pattern = _pick_title_pattern(top_patterns)
+            best_ex = chosen_pattern.get("example", chosen_pattern.get("pattern", ""))
+            learned_hint += f"\n이번에 사용할 제목 형식(로테이션 적용): {chosen_pattern.get('pattern','')} (예: {best_ex})"
         if hot_keywords:
             learned_hint += f"\n반드시 포함할 트렌딩 키워드: {', '.join(hot_keywords)}"
         if hot_cats:
@@ -1931,6 +1981,11 @@ JSON 외 텍스트 절대 금지!
             print(f"[ERROR] video_package_json: JSON 없음. 원문:\n{response}")
             return None
         data = json.loads(response[s:e])
+        # LLM이 JSON 지시를 어기고 title에 마크다운 강조(**)를 남기는 경우가 있어 제거
+        if data.get("title"):
+            data["title"] = re.sub(r"^\*+|\*+$", "", data["title"]).strip()
+        if data.get("title_en"):
+            data["title_en"] = re.sub(r"^\*+|\*+$", "", data["title_en"]).strip()
         print(f"[INFO] video_package_json: 파싱 성공 - {data.get('title')}")
         return data
     except json.JSONDecodeError as e:
@@ -2497,35 +2552,42 @@ def get_pexels_videos(keyword: str, count: int = 5) -> list:
     return []
 
 
-def _download_one_pexels_clip(query: str, clip_sec: float, clip_path: str, raw_path: str, api_key: str, landscape: bool = False) -> bool:
-    """단일 쿼리로 Pexels 클립 1개 다운로드·전처리. 성공 시 True."""
+def _download_one_pexels_clip(query: str, clip_sec: float, clip_path: str, raw_path: str, api_key: str, landscape: bool = False, exclude_ids: set = None) -> tuple:
+    """단일 쿼리로 Pexels 클립 1개 다운로드·전처리. 성공 시 (True, clip_id), 실패 시 (False, None).
+    exclude_ids에 있는 영상은 건너뛰고 검색 결과 중 다음 순위를 사용(최근 재사용 방지)."""
+    exclude_ids = exclude_ids or set()
     try:
         resp = requests.get(
             "https://api.pexels.com/videos/search",
             headers={"Authorization": api_key},
-            params={"query": query, "per_page": 3, "orientation": "landscape" if landscape else "portrait"},
+            params={"query": query, "per_page": 10, "orientation": "landscape" if landscape else "portrait"},
             timeout=15,
         )
         if resp.status_code != 200:
-            return False
+            return False, None
         videos = resp.json().get("videos", [])
         if not videos:
-            return False
-        files  = videos[0].get("video_files", [])
+            return False, None
+        picked = next((v for v in videos if f"pexels:{v.get('id')}" not in exclude_ids), None)
+        if picked is None:
+            print(f"[INFO] [PEXELS] '{query}' 검색결과 전부 최근 사용 클립 — 대안 없어 재사용")
+            picked = videos[0]
+        clip_id = f"pexels:{picked.get('id')}"
+        files  = picked.get("video_files", [])
         target = next((f for f in files if f.get("quality") == "sd"), files[0] if files else None)
         if not target:
-            return False
+            return False, None
         dl = requests.get(target["link"], timeout=30, stream=True)
         if dl.status_code != 200:
-            return False
+            return False, None
         with open(raw_path, "wb") as f:
             for chunk in dl.iter_content(65536):
                 f.write(chunk)
         if os.path.getsize(raw_path) < 10000:
-            return False
+            return False, None
     except Exception as e:
         print("[WARN]", f"[PEXELS] 다운로드 실패 '{query}': {e}")
-        return False
+        return False, None
 
     scale_crop = ("scale=3413:1920:force_original_aspect_ratio=increase,crop=1920:1080"
                   if landscape else
@@ -2547,7 +2609,8 @@ def _download_one_pexels_clip(query: str, clip_sec: float, clip_path: str, raw_p
         os.remove(raw_path)
     except Exception:
         pass
-    return os.path.exists(clip_path) and os.path.getsize(clip_path) > 5000
+    ok = os.path.exists(clip_path) and os.path.getsize(clip_path) > 5000
+    return ok, (clip_id if ok else None)
 
 
 def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 5, landscape: bool = False) -> list:
@@ -2569,31 +2632,43 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
     while len(queries) < max_clips:
         queries.append(fallbacks[len(queries) % len(fallbacks)])
 
+    # 최근 사용한 클립 ID 기억 → 검색 결과가 겹치면 다음 순위로 넘어감
+    recent_ids = set(_load_recent_clip_ids())
+    newly_used = []
+
     for idx, query in enumerate(queries[:max_clips]):
         if len(clips) >= max_clips:
             break
 
         clip_path = os.path.join(IMAGES_DIR, f"clip_{ts}_{idx}.mp4")
         raw_path  = os.path.join(IMAGES_DIR, f"clip_raw_{ts}_{idx}.mp4")
+        exclude   = recent_ids | set(newly_used)
 
         # 1순위: Coverr (동적 감성 영상)
         if coverr_key:
             print(f"[INFO] [COVERR] 클립 {idx+1}/{max_clips}: '{query}'")
-            if _download_one_coverr_clip(query, clip_sec, clip_path, raw_path, coverr_key, landscape=landscape):
+            ok, clip_id = _download_one_coverr_clip(query, clip_sec, clip_path, raw_path, coverr_key, landscape=landscape, exclude_ids=exclude)
+            if ok:
                 clips.append(clip_path)
-                print(f"[INFO] [COVERR] OK: {clip_path}")
+                newly_used.append(clip_id)
+                print(f"[INFO] [COVERR] OK: {clip_path} ({clip_id})")
                 continue
             print(f"[WARN] [COVERR] '{query}' 실패 → Pexels 폴백")
 
         # 2순위: Pexels
         if pexels_key:
             print(f"[INFO] [PEXELS] 폴백 클립: '{query}'")
-            if _download_one_pexels_clip(query, clip_sec, clip_path, raw_path, pexels_key, landscape=landscape):
+            ok, clip_id = _download_one_pexels_clip(query, clip_sec, clip_path, raw_path, pexels_key, landscape=landscape, exclude_ids=exclude)
+            if ok:
                 clips.append(clip_path)
-                print(f"[INFO] [PEXELS] OK: {clip_path}")
+                newly_used.append(clip_id)
+                print(f"[INFO] [PEXELS] OK: {clip_path} ({clip_id})")
                 continue
 
         print(f"[WARN] '{query}' Coverr+Pexels 모두 실패, 스킵")
+
+    if newly_used:
+        _save_recent_clip_ids(list(recent_ids) + newly_used)
 
     return clips
 
@@ -2678,32 +2753,38 @@ def _fetch_pixabay_clips(keywords: list, clip_sec: float = 8.0, max_clips: int =
     return clips
 
 
-def _download_one_coverr_clip(query: str, clip_sec: float, clip_path: str, raw_path: str, api_key: str, landscape: bool = False) -> bool:
-    """Coverr API로 단일 클립 다운로드·전처리. 성공 시 True."""
+def _download_one_coverr_clip(query: str, clip_sec: float, clip_path: str, raw_path: str, api_key: str, landscape: bool = False, exclude_ids: set = None) -> tuple:
+    """Coverr API로 단일 클립 다운로드·전처리. 성공 시 (True, clip_id), 실패 시 (False, None).
+    exclude_ids에 있는 영상은 건너뛰고 검색 결과 중 다음 순위를 사용(최근 재사용 방지)."""
+    exclude_ids = exclude_ids or set()
     try:
         resp = requests.get(
             "https://api.coverr.co/videos",
             headers={"X-Api-Key": api_key},
-            params={"keywords": query, "limit": 3},
+            params={"keywords": query, "limit": 10},
             timeout=15,
         )
         if resp.status_code != 200:
-            return False
+            return False, None
         data = resp.json()
         hits = data.get("hits", [])
         if not hits:
             print(f"[WARN] [COVERR] '{query}' 검색결과 없음, status={resp.status_code}")
-            return False
-        hit = hits[0]
+            return False, None
+        hit = next((h for h in hits if f"coverr:{h.get('id')}" not in exclude_ids), None)
+        if hit is None:
+            print(f"[INFO] [COVERR] '{query}' 검색결과 전부 최근 사용 클립 — 대안 없어 재사용")
+            hit = hits[0]
+        clip_id = f"coverr:{hit.get('id')}"
         # Coverr API v2: mp4Url (camelCase), 없으면 url 필드 시도
         video_url = hit.get("mp4Url") or hit.get("mp4_url") or hit.get("url") or ""
         # url 필드가 웹페이지 URL인 경우 스킵 (coverr.co/videos/... 형태)
         if not video_url or ("coverr.co/videos" in video_url and not video_url.endswith(".mp4")):
             print(f"[WARN] [COVERR] '{query}' 다운로드 URL 없음, keys={list(hit.keys())}")
-            return False
+            return False, None
         dl = requests.get(video_url, timeout=20, stream=True)
         if dl.status_code != 200:
-            return False
+            return False, None
         size = 0
         with open(raw_path, "wb") as f:
             for chunk in dl.iter_content(65536):
@@ -2712,10 +2793,10 @@ def _download_one_coverr_clip(query: str, clip_sec: float, clip_path: str, raw_p
                 if size > 30 * 1024 * 1024:  # 30MB 초과 시 중단
                     break
         if os.path.getsize(raw_path) < 10000:
-            return False
+            return False, None
     except Exception as e:
         print("[WARN]", f"[COVERR] 다운로드 실패 '{query}': {e}")
-        return False
+        return False, None
 
     scale_crop = ("scale=3413:1920:force_original_aspect_ratio=increase,crop=1920:1080"
                   if landscape else
@@ -2737,7 +2818,8 @@ def _download_one_coverr_clip(query: str, clip_sec: float, clip_path: str, raw_p
         os.remove(raw_path)
     except Exception:
         pass
-    return os.path.exists(clip_path) and os.path.getsize(clip_path) > 5000
+    ok = os.path.exists(clip_path) and os.path.getsize(clip_path) > 5000
+    return ok, (clip_id if ok else None)
 
 
 def _fetch_pexels_clips_legacy(keywords: list, clip_sec: float = 5.5, max_clips: int = 2) -> list:
@@ -2864,12 +2946,12 @@ def start_long_video():
 @app.route("/batch-video", methods=["POST"])
 def batch_video():
     """배치 영상 제작 (최대 5개, 순차 실행).
-    POST body: {"count": 5, "include_infographic": false, "infographic_privacy": "private"}
-    infographic_privacy는 인포그래픽 슬롯에만 적용 — 기본값 private
-    (안정성 검증 기간, 수 일간 비공개로 쌓아두고 검토 후 public으로 전환 예정)."""
+    POST body: {"count": 5, "include_infographic": false, "infographic_privacy": "public"}
+    infographic_privacy는 인포그래픽 슬롯에만 적용 — 기본값 public
+    (2026-07-07~07-15 8일간 private로 안정성 검증 완료, 이후 정식 공개 전환)."""
     data  = request.get_json(silent=True) or {}
     count = min(max(int(data.get("count", 5)), 1), 5)
-    infographic_privacy = data.get("infographic_privacy", "private")
+    infographic_privacy = data.get("infographic_privacy", "public")
 
     job_types = ["shorts"] * count
     infographic_topic = None
