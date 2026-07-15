@@ -1,6 +1,6 @@
 {
-  "updated_at": "20260714",
-  "version": 3,
+  "updated_at": "20260715",
+  "version": 4,
   "title_patterns": [
     {
       "pattern": "❌ [주제] 하지마세요",
@@ -57,23 +57,28 @@
   "trending_keywords": [
     {
       "keyword": "수익",
-      "weight": 1.6,
+      "weight": 1.7000000000000002,
       "views_boost": 2.0
     },
     {
       "keyword": "부업",
-      "weight": 1.5,
+      "weight": 1.6,
       "views_boost": 1.9
     },
     {
       "keyword": "AI",
-      "weight": 1.4000000000000001,
+      "weight": 1.5000000000000002,
       "views_boost": 1.8
     },
     {
       "keyword": "자동화",
-      "weight": 1.3,
+      "weight": 1.4000000000000001,
       "views_boost": 1.5
+    },
+    {
+      "keyword": "투자",
+      "weight": 1.3,
+      "views_boost": 1.4
     },
     {
       "keyword": "반전",
@@ -97,11 +102,6 @@
     },
     {
       "keyword": "애니메이션 밈",
-      "weight": 1.2,
-      "views_boost": 1.4
-    },
-    {
-      "keyword": "투자",
       "weight": 1.2,
       "views_boost": 1.4
     }
