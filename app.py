@@ -3472,6 +3472,44 @@ def stats():
     }), 200
 
 
+@app.route("/recent-uploads", methods=["GET"])
+def recent_uploads():
+    """최근 N분 이내 실제 YouTube 업로드 목록 (YouTube API 직접 조회).
+    _jobs 딕셔너리(서버 재시작 시 소실)와 무관한 별도 진실 공급원 —
+    상태 조회가 404(server_restarted)로 실패했을 때 실제 업로드 성공 여부를
+    교차검증하는 용도로 poll_batch_jobs.py에서 호출한다."""
+    minutes = min(max(int(request.args.get("minutes", 30)), 1), 180)
+    svc, err = get_youtube_service()
+    if not svc:
+        return jsonify({"error": err or "youtube_auth_failed", "uploads": []}), 200
+
+    try:
+        ch_resp = svc.channels().list(part="contentDetails", mine=True).execute()
+        items = ch_resp.get("items", [])
+        if not items:
+            return jsonify({"error": "no_channel", "uploads": []}), 200
+        uploads_playlist_id = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+
+        cutoff = datetime.utcnow() - timedelta(minutes=minutes)
+        pl_resp = svc.playlistItems().list(
+            part="snippet", playlistId=uploads_playlist_id, maxResults=15,
+        ).execute()
+
+        uploads = []
+        for item in pl_resp.get("items", []):
+            sn = item["snippet"]
+            pub_dt = datetime.strptime(sn["publishedAt"], "%Y-%m-%dT%H:%M:%SZ")
+            if pub_dt >= cutoff:
+                uploads.append({
+                    "video_id":     sn["resourceId"]["videoId"],
+                    "title":        sn.get("title", ""),
+                    "published_at": sn["publishedAt"],
+                })
+        return jsonify({"minutes": minutes, "count": len(uploads), "uploads": uploads}), 200
+    except Exception as e:
+        return jsonify({"error": str(e), "uploads": []}), 200
+
+
 @app.route("/reset")
 def reset():
     session.pop("history", None)

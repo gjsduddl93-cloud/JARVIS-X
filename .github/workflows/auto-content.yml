@@ -1,12 +1,9 @@
-name: Daily Viral Shorts (15개/일)
+name: Daily Viral Shorts (2개/일)
 
 on:
   schedule:
     - cron: '0 0 * * *'   # 09:00 KST
-    - cron: '0 3 * * *'   # 12:00 KST
-    - cron: '0 6 * * *'   # 15:00 KST
     - cron: '0 9 * * *'   # 18:00 KST
-    - cron: '0 12 * * *'  # 21:00 KST
   workflow_dispatch:       # 수동 실행
 
 jobs:
@@ -34,13 +31,13 @@ jobs:
           echo "❌ 3분 내 헬스체크 실패"
           exit 1
 
-      # ── 3. 배치 영상 3개 시작 (09:00 KST 슬롯에만 인포그래픽 1개 포함) ──────────────
-      - name: Start batch (3개)
+      # ── 3. 영상 1개 시작 (09:00 KST 슬롯에만 인포그래픽으로 대체) ──────────────
+      - name: Start batch (1개)
         id: batch
         env:
           SCHEDULE_CRON: ${{ github.event.schedule }}
         run: |
-          echo "🎬 배치 영상 제작 시작 (3개)..."
+          echo "🎬 영상 제작 시작 (1개)..."
           INCLUDE_INFO="false"
           if [ "$SCHEDULE_CRON" = "0 0 * * *" ]; then
             INCLUDE_INFO="true"
@@ -49,7 +46,7 @@ jobs:
           RESP=$(curl -sf --max-time 30 \
             -X POST \
             -H "Content-Type: application/json" \
-            -d "{\"count\":3,\"include_infographic\":$INCLUDE_INFO}" \
+            -d "{\"count\":1,\"include_infographic\":$INCLUDE_INFO}" \
             "${{ secrets.RENDER_URL }}/batch-video")
           echo "Response: $RESP"
 
@@ -61,7 +58,7 @@ jobs:
           echo "job_ids=$IDS" >> $GITHUB_OUTPUT
           echo "✅ 배치 시작: $IDS"
 
-      # ── 4. 3개 job 완료까지 폴링 (최대 15분) ────────────────────────────────────
+      # ── 4. job 완료까지 폴링 (최대 14분, 서버 재시작 시 YouTube 업로드 이력으로 재확인) ──
       - name: Poll all jobs until done
         env:
           RENDER_URL: ${{ secrets.RENDER_URL }}
