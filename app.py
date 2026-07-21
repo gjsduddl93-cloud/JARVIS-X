@@ -128,25 +128,27 @@ def _save_success_metric(video_id: str, title: str, youtube_url: str) -> None:
     except Exception as e:
         print(f"[WARN] success_metrics 저장 실패: {e}")
 
-# ── 배경 클립 재사용 방지 (Coverr/Pexels) ────────────────────────────────────
-# Render는 재시작/재배포마다 로컬 파일이 사라지지만, 같은 프로세스가 살아있는 동안
-# (하루 여러 배치가 도는 구간)은 이 파일로 최근 사용 클립을 기억해 반복을 줄인다.
-_RECENT_CLIPS_FILE = os.path.join(DATA_DIR, "recent_clips.json")
-_RECENT_CLIPS_MAX  = 300  # 최근 사용 클립 ID 기억 개수(대략 며칠 분)
+# ── 배경 미디어 재사용 방지 (Coverr/Pexels/Pixabay 클립 + Unsplash/Pixabay 이미지) ──
+# Render는 재시작/재배포(무료 플랜은 15분 무활동 슬립 포함)마다 로컬 파일이 사라지지만,
+# 같은 프로세스가 살아있는 동안(같은 배치 안, 또는 재시작 사이 짧은 구간)은 이 파일로
+# 최근 사용 미디어를 기억해 반복을 줄인다. 소스별로 접두사(coverr:/pexels:/unsplash: 등)를
+# 붙여 하나의 풀을 공유한다.
+_RECENT_MEDIA_FILE = os.path.join(DATA_DIR, "recent_media_ids.json")
+_RECENT_MEDIA_MAX  = 500  # 최근 사용 미디어 ID 기억 개수(대략 며칠 분)
 
-def _load_recent_clip_ids() -> list:
+def _load_recent_media_ids() -> list:
     try:
-        with open(_RECENT_CLIPS_FILE, encoding="utf-8") as f:
+        with open(_RECENT_MEDIA_FILE, encoding="utf-8") as f:
             return json.load(f).get("ids", [])
     except Exception:
         return []
 
-def _save_recent_clip_ids(ids: list) -> None:
+def _save_recent_media_ids(ids: list) -> None:
     try:
-        with open(_RECENT_CLIPS_FILE, "w", encoding="utf-8") as f:
-            json.dump({"ids": ids[-_RECENT_CLIPS_MAX:]}, f, ensure_ascii=False)
+        with open(_RECENT_MEDIA_FILE, "w", encoding="utf-8") as f:
+            json.dump({"ids": ids[-_RECENT_MEDIA_MAX:]}, f, ensure_ascii=False)
     except Exception as e:
-        print(f"[WARN] recent_clips 저장 실패: {e}")
+        print(f"[WARN] recent_media_ids 저장 실패: {e}")
 
 # ── 제목 템플릿 로테이션 (학습 패턴 쏠림 방지) ────────────────────────────────
 _RECENT_TITLE_PATTERNS_FILE = os.path.join(DATA_DIR, "recent_title_patterns.json")
@@ -824,7 +826,8 @@ def create_simple_video(content_data):
 # ── Unsplash 이미지 다운로드 ──────────────────────────────────────────────────
 
 def _download_unsplash_images(keywords: list, count: int = 5) -> list:
-    """Unsplash API로 이미지 다운로드. portrait 우선 → 부족하면 일반 검색으로 재시도."""
+    """Unsplash API로 이미지 다운로드. portrait 우선 → 부족하면 일반 검색으로 재시도.
+    검색 결과 상위권 중 최근 미사용 항목을 무작위로 골라 반복 사용을 줄인다."""
     api_key = os.getenv("UNSPLASH_API_KEY", "").strip()
     if not api_key:
         print("[UNSPLASH] UNSPLASH_API_KEY 없음")
@@ -833,6 +836,9 @@ def _download_unsplash_images(keywords: list, count: int = 5) -> list:
     base_q   = " ".join(str(k) for k in keywords[:2]) if keywords else "technology AI future"
     ts       = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     img_paths: list = []
+
+    recent_ids = set(_load_recent_media_ids())
+    newly_used = []
 
     # 쿼리 시도 순서: portrait 우선 → orientation 없이 → 범용 밝은 키워드
     search_attempts = [
@@ -846,7 +852,7 @@ def _download_unsplash_images(keywords: list, count: int = 5) -> list:
         if len(img_paths) >= count:
             break
         need = count - len(img_paths)
-        params: dict = {"query": attempt_q, "per_page": need + 3}
+        params: dict = {"query": attempt_q, "per_page": min(need + 10, 30)}
         if orientation:
             params["orientation"] = orientation
         print(f"[UNSPLASH] 검색: '{attempt_q}' orient={orientation} need={need}")
@@ -862,7 +868,15 @@ def _download_unsplash_images(keywords: list, count: int = 5) -> list:
                 continue
             photos = resp.json().get("results", [])
             print(f"[UNSPLASH] 결과: {len(photos)}개")
-            for i, photo in enumerate(photos):
+
+            exclude = recent_ids | set(newly_used)
+            fresh = [p for p in photos if f"unsplash:{p.get('id')}" not in exclude]
+            if not fresh and photos:
+                print(f"[INFO] [UNSPLASH] '{attempt_q}' 검색결과 전부 최근 사용 이미지 — 대안 없어 재사용")
+                fresh = photos
+            random.shuffle(fresh)
+
+            for photo in fresh:
                 if len(img_paths) >= count:
                     break
                 img_url = (photo.get("urls", {}).get("regular") or
@@ -879,6 +893,7 @@ def _download_unsplash_images(keywords: list, count: int = 5) -> list:
                         size = os.path.getsize(img_path)
                         if size > 5000:
                             img_paths.append(img_path)
+                            newly_used.append(f"unsplash:{photo.get('id')}")
                             print(f"[UNSPLASH] {len(img_paths)}번: {size//1024}KB")
                         else:
                             os.remove(img_path)
@@ -887,12 +902,16 @@ def _download_unsplash_images(keywords: list, count: int = 5) -> list:
         except Exception as e:
             print(f"[UNSPLASH] 요청 실패: {e}")
 
+    if newly_used:
+        _save_recent_media_ids(list(recent_ids) + newly_used)
+
     print(f"[UNSPLASH] 최종 {len(img_paths)}개 준비")
     return img_paths
 
 
 def _download_pixabay_images(keywords: list, count: int = 5) -> list:
-    """Pixabay API로 이미지 다운로드. Unsplash 부족 시 보충 소스."""
+    """Pixabay API로 이미지 다운로드. Unsplash 부족 시 보충 소스.
+    검색 결과 상위권 중 최근 미사용 항목을 무작위로 골라 반복 사용을 줄인다."""
     api_key = os.getenv("PIXABAY_API_KEY", "").strip()
     if not api_key:
         print("[PIXABAY] PIXABAY_API_KEY 없음")
@@ -901,6 +920,9 @@ def _download_pixabay_images(keywords: list, count: int = 5) -> list:
     base_q   = " ".join(str(k) for k in keywords[:2]) if keywords else "technology AI"
     ts       = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     img_paths: list = []
+
+    recent_ids = set(_load_recent_media_ids())
+    newly_used = []
 
     search_attempts = [
         (base_q, "vertical"),
@@ -917,7 +939,7 @@ def _download_pixabay_images(keywords: list, count: int = 5) -> list:
             "key":        api_key,
             "q":          attempt_q,
             "image_type": "photo",
-            "per_page":   min(need + 3, 20),
+            "per_page":   min(need + 10, 30),
             "safesearch": "true",
             "lang":       "en",
         }
@@ -931,7 +953,15 @@ def _download_pixabay_images(keywords: list, count: int = 5) -> list:
                 continue
             hits = resp.json().get("hits", [])
             print(f"[PIXABAY] 결과: {len(hits)}개")
-            for hit in hits:
+
+            exclude = recent_ids | set(newly_used)
+            fresh = [h for h in hits if f"pixabayimg:{h.get('id')}" not in exclude]
+            if not fresh and hits:
+                print(f"[INFO] [PIXABAY] '{attempt_q}' 검색결과 전부 최근 사용 이미지 — 대안 없어 재사용")
+                fresh = hits
+            random.shuffle(fresh)
+
+            for hit in fresh:
                 if len(img_paths) >= count:
                     break
                 img_url = hit.get("largeImageURL") or hit.get("webformatURL", "")
@@ -947,6 +977,7 @@ def _download_pixabay_images(keywords: list, count: int = 5) -> list:
                         size = os.path.getsize(img_path)
                         if size > 5000:
                             img_paths.append(img_path)
+                            newly_used.append(f"pixabayimg:{hit.get('id')}")
                             print(f"[PIXABAY] {len(img_paths)}번: {size//1024}KB")
                         else:
                             os.remove(img_path)
@@ -954,6 +985,9 @@ def _download_pixabay_images(keywords: list, count: int = 5) -> list:
                     print(f"[PIXABAY] 다운로드 실패: {e}")
         except Exception as e:
             print(f"[PIXABAY] 요청 실패: {e}")
+
+    if newly_used:
+        _save_recent_media_ids(list(recent_ids) + newly_used)
 
     print(f"[PIXABAY] 최종 {len(img_paths)}개 준비")
     return img_paths
@@ -2568,10 +2602,11 @@ def _download_one_pexels_clip(query: str, clip_sec: float, clip_path: str, raw_p
         videos = resp.json().get("videos", [])
         if not videos:
             return False, None
-        picked = next((v for v in videos if f"pexels:{v.get('id')}" not in exclude_ids), None)
-        if picked is None:
+        fresh = [v for v in videos if f"pexels:{v.get('id')}" not in exclude_ids]
+        if not fresh:
             print(f"[INFO] [PEXELS] '{query}' 검색결과 전부 최근 사용 클립 — 대안 없어 재사용")
-            picked = videos[0]
+            fresh = videos
+        picked = random.choice(fresh)
         clip_id = f"pexels:{picked.get('id')}"
         files  = picked.get("video_files", [])
         target = next((f for f in files if f.get("quality") == "sd"), files[0] if files else None)
@@ -2632,8 +2667,8 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
     while len(queries) < max_clips:
         queries.append(fallbacks[len(queries) % len(fallbacks)])
 
-    # 최근 사용한 클립 ID 기억 → 검색 결과가 겹치면 다음 순위로 넘어감
-    recent_ids = set(_load_recent_clip_ids())
+    # 최근 사용한 클립 ID 기억 → 검색 결과가 겹치면 다른 후보로 넘어감
+    recent_ids = set(_load_recent_media_ids())
     newly_used = []
 
     for idx, query in enumerate(queries[:max_clips]):
@@ -2668,7 +2703,7 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
         print(f"[WARN] '{query}' Coverr+Pexels 모두 실패, 스킵")
 
     if newly_used:
-        _save_recent_clip_ids(list(recent_ids) + newly_used)
+        _save_recent_media_ids(list(recent_ids) + newly_used)
 
     return clips
 
@@ -2676,6 +2711,7 @@ def _fetch_pexels_clips(keywords: list, clip_sec: float = 5.5, max_clips: int = 
 def _fetch_pixabay_clips(keywords: list, clip_sec: float = 8.0, max_clips: int = 10, landscape: bool = True) -> list:
     """
     Pixabay Video API로 클립 수집 (장편 영상용 — Coverr/Pexels 보조 소스).
+    검색 결과 상위권 중 최근 미사용 항목을 무작위로 골라 반복 사용을 줄인다.
     PIXABAY_API_KEY 없으면 빈 리스트 반환.
     """
     api_key = os.getenv("PIXABAY_API_KEY", "").strip()
@@ -2694,6 +2730,9 @@ def _fetch_pixabay_clips(keywords: list, clip_sec: float = 8.0, max_clips: int =
                   if landscape else
                   "scale=1620:2880:force_original_aspect_ratio=increase,crop=1080:1920")
 
+    recent_ids = set(_load_recent_media_ids())
+    newly_used = []
+
     for idx, query in enumerate(queries[:max_clips]):
         if len(clips) >= max_clips:
             break
@@ -2702,7 +2741,7 @@ def _fetch_pixabay_clips(keywords: list, clip_sec: float = 8.0, max_clips: int =
         try:
             resp = requests.get(
                 "https://pixabay.com/api/videos/",
-                params={"key": api_key, "q": query, "safesearch": "true", "per_page": 3},
+                params={"key": api_key, "q": query, "safesearch": "true", "per_page": 10},
                 timeout=15,
             )
             if resp.status_code != 200:
@@ -2712,7 +2751,13 @@ def _fetch_pixabay_clips(keywords: list, clip_sec: float = 8.0, max_clips: int =
             if not hits:
                 print(f"[WARN] [PIXABAY-VIDEO] '{query}' 검색결과 없음")
                 continue
-            videos    = hits[0].get("videos", {})
+            exclude = recent_ids | set(newly_used)
+            fresh = [h for h in hits if f"pixabayclip:{h.get('id')}" not in exclude]
+            if not fresh:
+                print(f"[INFO] [PIXABAY-VIDEO] '{query}' 검색결과 전부 최근 사용 클립 — 대안 없어 재사용")
+                fresh = hits
+            picked = random.choice(fresh)
+            videos    = picked.get("videos", {})
             video_url = (videos.get("medium", {}).get("url")
                          or videos.get("small", {}).get("url")
                          or videos.get("large", {}).get("url", ""))
@@ -2748,7 +2793,11 @@ def _fetch_pixabay_clips(keywords: list, clip_sec: float = 8.0, max_clips: int =
             pass
         if os.path.exists(clip_path) and os.path.getsize(clip_path) > 5000:
             clips.append(clip_path)
+            newly_used.append(f"pixabayclip:{picked.get('id')}")
             print(f"[INFO] [PIXABAY-VIDEO] OK: {clip_path}")
+
+    if newly_used:
+        _save_recent_media_ids(list(recent_ids) + newly_used)
 
     return clips
 
