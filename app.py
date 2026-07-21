@@ -476,14 +476,17 @@ def _build_drawtext_vf(font_path, title, narration):
     ]
     lines = [narration[i:i+18] for i in range(0, min(len(narration), 90), 18)]
     start_times = [0.5, 5.0, 9.5, 14.5, 20.0]
+    times = [start_times[idx] if idx < len(start_times) else 0.5 + idx * 5.0
+             for idx in range(len(lines))]
     for idx, line in enumerate(lines):
-        t = start_times[idx] if idx < len(start_times) else 0.5 + idx * 5.0
+        t     = times[idx]
+        t_end = times[idx + 1] if idx + 1 < len(times) else t + 5.0
         parts.append(
             f"drawtext=fontfile='{fp}'"
             f":text='{_ffmpeg_escape(line)}'"
             f":fontsize=52:fontcolor=white"
             f":x=(w-text_w)/2:y=h-260"
-            f":enable='gte(t,{t})'"
+            f":enable='between(t,{t},{t_end})'"
             f":borderw=5:bordercolor=black@0.95"
             f":shadowx=4:shadowy=4:shadowcolor=black@0.5"
         )
@@ -511,13 +514,16 @@ def _build_ascii_drawtext_vf(title, narration):
     # 나레이션: 안전구역 하단, 순차 등장
     lines = [anarr[i:i+36] for i in range(0, min(len(anarr), 200), 36)]
     start_times = [0.5, 5.0, 9.5, 14.5, 20.0]
+    times = [start_times[idx] if idx < len(start_times) else 0.5 + idx * 5.0
+             for idx in range(len(lines))]
     for idx, line in enumerate(lines):
-        t = start_times[idx] if idx < len(start_times) else 0.5 + idx * 5.0
+        t     = times[idx]
+        t_end = times[idx + 1] if idx + 1 < len(times) else t + 5.0
         parts.append(
             f"drawtext=text='{_ffmpeg_escape(line)}'"
             f":fontsize=52:fontcolor=white"
             f":x=(w-text_w)/2:y=h-260"
-            f":enable='gte(t,{t})'"
+            f":enable='between(t,{t},{t_end})'"
             f":borderw=5:bordercolor=black@0.95"
             f":shadowx=4:shadowy=4:shadowcolor=black@0.5"
         )
@@ -3188,7 +3194,7 @@ def video_package():
         if not content_data:
             return jsonify({"status": "error", "step": "content",
                             "message": "AI 콘텐츠 생성 실패"}), 500
-        video_path = create_simple_video(content_data)
+        video_path = create_viral_shorts(content_data)
         if not video_path:
             return jsonify({"status": "partial", "step": "video",
                             "message": "영상 생성 실패", "content": content_data}), 500
@@ -3215,7 +3221,7 @@ def auto_create():
     try:
         content_data = video_package_json()
         if content_data:
-            video_path = create_simple_video(content_data)
+            video_path = create_viral_shorts(content_data)
             if video_path:
                 results.append("✅ 영상 생성 완료")
                 upload = upload_to_youtube(video_path, content_data.get("title"),
