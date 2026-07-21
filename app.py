@@ -179,6 +179,99 @@ def _pick_title_pattern(top_patterns: list) -> dict:
     _save_recent_title_patterns(recent + [chosen.get("pattern", "")])
     return chosen
 
+# ── 소재(카테고리+키워드) 로테이션 (내용 반복 방지) ───────────────────────────
+# 기존엔 매번 순수 랜덤이라 40개(8카테고리x5키워드) 풀 안에서 며칠 내로 같은 소재가
+# 그대로 재등장했다. 최근 사용한 조합은 쿨다운 동안 제외해 소재 반복을 줄인다.
+_RECENT_TOPICS_FILE = os.path.join(DATA_DIR, "recent_topics.json")
+TOPIC_COOLDOWN = 8  # 최근 사용한 카테고리+키워드 조합 N개는 당분간 재사용하지 않음
+
+def _load_recent_topics() -> list:
+    try:
+        with open(_RECENT_TOPICS_FILE, encoding="utf-8") as f:
+            return json.load(f).get("topics", [])
+    except Exception:
+        return []
+
+def _save_recent_topics(topics: list) -> None:
+    try:
+        with open(_RECENT_TOPICS_FILE, "w", encoding="utf-8") as f:
+            json.dump({"topics": topics[-50:]}, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"[WARN] recent_topics 저장 실패: {e}")
+
+def _pick_topic_and_keyword() -> tuple:
+    """(카테고리+키워드) 조합 단위로 쿨다운 적용해 최근 소재 반복을 피한다.
+    쿨다운 적용 후 후보가 없으면(조합 수가 적을 때) 쿨다운 없이 전체 풀에서 선택."""
+    recent = _load_recent_topics()
+    cooldown_set = set(recent[-TOPIC_COOLDOWN:])
+    all_pairs = [(cat, kw) for cat in _TRENDING_CATEGORIES for kw in cat["keywords"]]
+    pool = [(cat, kw) for cat, kw in all_pairs if f"{cat['category']}::{kw}" not in cooldown_set] or all_pairs
+    chosen_cat, chosen_kw = random.choice(pool)
+    _save_recent_topics(recent + [f"{chosen_cat['category']}::{chosen_kw}"])
+    return chosen_cat, chosen_kw
+
+# ── 나레이션 톤/감탄사 로테이션 (같은 리액션 문구 반복 방지) ───────────────────
+# 기존엔 "감탄사(와/오/대박/미쳤어요)"와 예시 3개가 프롬프트에 고정되어 있어
+# LLM이 사실상 매번 같은 표현으로 수렴했다. 톤 자체를 여러 개 두고 로테이션한다.
+_RECENT_NARRATION_STYLES_FILE = os.path.join(DATA_DIR, "recent_narration_styles.json")
+NARRATION_STYLE_COOLDOWN = 3
+
+NARRATION_STYLES = [
+    {
+        "id": "surprise",
+        "tone": '존댓말 + 놀람 리액션. "~요/~어요/~네요" + 감탄사(와/헐/대박/미쳤어요)',
+        "hook_example": "와, 진짜 미쳤어요! 이거 봤어요?",
+    },
+    {
+        "id": "calm_insider",
+        "tone": '존댓말 + 담백한 내부자 화법(은근한 놀람). "~더라고요/~던데요" + "사실은/솔직히/믿으실지 모르겠지만"',
+        "hook_example": "솔직히 이거, 저도 반신반의했거든요.",
+    },
+    {
+        "id": "curious_question",
+        "tone": '존댓말 + 궁금증 유발 질문 연속. "~일까요?/~아세요?" + "그거 아세요?/왜 그런지 아세요?"',
+        "hook_example": "이거 왜 아무도 얘기 안 해줬을까요?",
+    },
+    {
+        "id": "skeptic_turned_believer",
+        "tone": '존댓말 + 처음엔 의심했다가 설득되는 화법. "처음엔 안 믿었는데/설마 했는데/직접 해보니까"',
+        "hook_example": "저도 처음엔 그냥 광고인 줄 알았어요.",
+    },
+    {
+        "id": "number_hook",
+        "tone": '존댓말 + 구체적 숫자로 바로 시작 후 짧은 리액션. "~만원/~일 만에/~퍼센트"',
+        "hook_example": "3일 만에 47만원, 이거 실화예요.",
+    },
+    {
+        "id": "friendly_casual",
+        "tone": '존댓말이되 반말 섞인 친근체. "~거든요/~던데요" + "레알/찐이에요"',
+        "hook_example": "이거 레알 숨겨진 방법이었어요.",
+    },
+]
+
+def _load_recent_narration_styles() -> list:
+    try:
+        with open(_RECENT_NARRATION_STYLES_FILE, encoding="utf-8") as f:
+            return json.load(f).get("styles", [])
+    except Exception:
+        return []
+
+def _save_recent_narration_styles(styles: list) -> None:
+    try:
+        with open(_RECENT_NARRATION_STYLES_FILE, "w", encoding="utf-8") as f:
+            json.dump({"styles": styles[-20:]}, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"[WARN] recent_narration_styles 저장 실패: {e}")
+
+def _pick_narration_style() -> dict:
+    """최근 NARRATION_STYLE_COOLDOWN개 사용한 톤은 제외하고 무작위 선택 (감탄사·화법 반복 방지)."""
+    recent = _load_recent_narration_styles()
+    cooldown_set = set(recent[-NARRATION_STYLE_COOLDOWN:])
+    pool = [s for s in NARRATION_STYLES if s["id"] not in cooldown_set] or NARRATION_STYLES
+    chosen = random.choice(pool)
+    _save_recent_narration_styles(recent + [chosen["id"]])
+    return chosen
+
 # ── 백그라운드 작업 저장소 ────────────────────────────────────────────────────
 # { job_id: {status, logs, content, video_path, youtube, error, created_at} }
 _jobs: dict = {}
@@ -1925,12 +2018,11 @@ def upload_to_instagram_reels(video_path: str, caption: str) -> dict:
 
 def video_package_json():
     import random
-    # 랜덤 카테고리 + 랜덤 키워드 선택 (배치 3개가 서로 다른 주제)
-    today_topic = select_todays_topic()
+    # 카테고리+키워드 조합 로테이션 (최근 사용한 소재는 쿨다운 동안 제외 → 내용 반복 방지)
+    today_topic, kw_sample = _pick_topic_and_keyword()
     category    = today_topic["category"]
     meta_hook   = today_topic.get("meta_hook")
-    kw_list     = today_topic["keywords"]
-    kw_sample   = random.choice(kw_list)  # 단일 키워드 랜덤 선택
+    narration_style = _pick_narration_style()
 
     # 학습 데이터 주입
     vp           = _load_viral_patterns()
@@ -1974,14 +2066,14 @@ def video_package_json():
 {learned_hint}
 {meta_hook_instruction}
 【나레이션 구조 — 반드시 이 말투와 순서로】
-말투: 존댓말 + 과장 리액션. "~요", "~어요", "~네요" + 감탄사(와/오/대박/미쳤어요) + 질문형
-1줄(훅): 감탄사로 시작 + 충격 사실 또는 질문
-  예시: "와, 진짜 미쳤어요! 이거 봤어요?"
-  예시: "오 대박! 이걸 AI가 다 한다고요?"
-  예시: "완전 신기하네요! 이 방법 아직 모르세요?"
-2~3줄(핵심): 구체적인 숫자·방법 + 리액션 섞기 (예: "진짜로요!", "믿기지 않죠?")
-4줄(인사이트): 강한 감탄 + 핵심 한 줄 정리
-5줄(CTA): "알림 설정하시면 매일 이런 꿀팁 드려요!"
+말투: {narration_style['tone']}
+1줄(훅): 위 말투로 시작 + 충격 사실 또는 질문
+  예시(참고용, 그대로 베끼지 말고 같은 톤으로 새로 창작): "{narration_style['hook_example']}"
+2~3줄(핵심): 구체적인 숫자·방법 + 위 말투에 맞는 리액션 섞기
+4줄(인사이트): 핵심 한 줄 정리 (1줄과 같은 감탄사·표현 반복 금지)
+5줄(CTA): "알림 설정하시면 매일 이런 꿀팁 드려요!" (표현은 매번 살짝 바꿔도 좋음)
+
+주의: 예시 문장은 톤 참고용일 뿐 그대로 재사용하지 말 것. 나레이션 안에서 같은 감탄사를 두 번 이상 반복하지 말 것.
 
 【제목 규칙】
 - 궁금증 유발 또는 혜택 명시 구조
@@ -1994,8 +2086,8 @@ def video_package_json():
   "title_en": "English title (max 35 chars, ASCII only)",
   "description": "YouTube 설명 (200자 이내, 핵심 키워드 + 해시태그 3개 포함)",
   "tags": ["태그1", "태그2", "태그3", "태그4", "태그5", "태그6", "태그7"],
-  "narration": "과장 리액션 나레이션 (120~140자, 한국어, 감탄사+존댓말, 와/오/대박/미쳤어요 포함, 숫자/구체적 방법 포함)",
-  "narration_en": "Excited reaction narration in English (max 180 chars, wow/amazing/unbelievable + actionable tips)",
+  "narration": "위에서 지정한 말투의 나레이션 (120~140자, 한국어, 숫자/구체적 방법 포함, 예시 문장 그대로 베끼지 말 것)",
+  "narration_en": "Same tone narration in English (max 180 chars, actionable tips, do not literally translate the Korean hook example)",
   "slide_keywords": ["slide1 visual scene", "slide2 visual", "slide3 visual", "slide4 visual", "slide5 visual", "slide6 visual", "slide7 visual", "slide8 visual"]
 }}
 
@@ -2030,10 +2122,9 @@ JSON 외 텍스트 절대 금지!
 def long_video_package_json():
     """5~7분 가로(16:9) 장편 YouTube 영상용 콘텐츠 JSON 생성."""
     import random
-    today_topic = select_todays_topic()
+    # 쇼츠와 동일한 쿨다운 풀 공유 (최근 쇼츠에서 다룬 소재도 자동으로 피함)
+    today_topic, kw_sample = _pick_topic_and_keyword()
     category    = today_topic["category"]
-    kw_list     = today_topic["keywords"]
-    kw_sample   = random.choice(kw_list)
 
     vp           = _load_viral_patterns()
     learned_hint = ""
