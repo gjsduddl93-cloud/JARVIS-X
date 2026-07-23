@@ -1,8 +1,8 @@
 {
-  "updated_at": "20260722",
-  "total_videos": 129,
-  "avg_views": 0,
-  "max_views": 9,
+  "updated_at": "20260723",
+  "total_videos": 133,
+  "avg_views": 27,
+  "max_views": 1272,
   "success_threshold": 10000,
   "success_count": 0,
   "videos": {
@@ -1166,6 +1166,42 @@
       "like_ratio": 0,
       "url": "https://youtube.com/watch?v=188JpVUu8dU",
       "tracked_at": "20260722"
+    },
+    "JFVPRI8TVYQ": {
+      "title": "❌ AI 부업 시작 전 이것 모르면 100% 망합니다",
+      "published_at": "2026-07-23T16:03:29Z",
+      "views": 4,
+      "likes": 0,
+      "like_ratio": 0.0,
+      "url": "https://youtube.com/watch?v=JFVPRI8TVYQ",
+      "tracked_at": "20260723"
+    },
+    "mopuk_ZU8m8": {
+      "title": "농담 한마디가 영상을 통째로 삭제? #Shorts",
+      "published_at": "2026-07-23T10:38:31Z",
+      "views": 1266,
+      "likes": 3,
+      "like_ratio": 0.0024,
+      "url": "https://youtube.com/watch?v=mopuk_ZU8m8",
+      "tracked_at": "20260723"
+    },
+    "WjAu_eo9yFA": {
+      "title": "이 둘, 최근 열애 사실이 알려졌다 #Shorts",
+      "published_at": "2026-07-23T10:38:07Z",
+      "views": 1048,
+      "likes": 1,
+      "like_ratio": 0.001,
+      "url": "https://youtube.com/watch?v=WjAu_eo9yFA",
+      "tracked_at": "20260723"
+    },
+    "5EeQwFDbQQs": {
+      "title": "이 커플, 1년 전에도 이미 끝났었다? #Shorts",
+      "published_at": "2026-07-23T10:38:03Z",
+      "views": 1272,
+      "likes": 13,
+      "like_ratio": 0.0102,
+      "url": "https://youtube.com/watch?v=5EeQwFDbQQs",
+      "tracked_at": "20260723"
     }
   }
 }
