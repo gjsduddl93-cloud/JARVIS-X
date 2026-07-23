@@ -1,11 +1,11 @@
 {
-  "updated_at": "20260722",
-  "version": 11,
+  "updated_at": "20260723",
+  "version": 12,
   "title_patterns": [
     {
-      "pattern": "❌ [주제] 하지마세요 (부정형 경고)",
-      "reason": "클릭 욕구 자극, 실수 회피 심리, 긴급성 느낌으로 높은 CTR",
-      "example": "❌ AI 유튜브 채널로 부업 시작했다가 수익 0원 된 이유",
+      "pattern": "❌ [주제] 하지마세요",
+      "reason": "금지형은 호기심 자극",
+      "example": "❌ 이 투자 하지마세요",
       "click_rate": 0.35,
       "avg_views": 150000,
       "frequency": "high",
@@ -20,9 +20,9 @@
       ]
     },
     {
-      "pattern": "[숫자]명 중 [숫자]명 모르는 [수익법]",
-      "reason": "희소성, 정보 비대칭, 배제당할 불안감 유발",
-      "example": "직장인 10명 중 7명 모르는 하루 30분 월 30만원 수익법",
+      "pattern": "[숫자]분 안에 [행동]",
+      "reason": "시간 제한으로 긴박감",
+      "example": "5분 안에 AI로 돈 버는 법",
       "click_rate": 0.3,
       "avg_views": 130000,
       "frequency": "medium",
@@ -37,9 +37,9 @@
       ]
     },
     {
-      "pattern": "[수익액] 버는 [직업]이 [새로운 방법] 배웠다",
-      "reason": "성공사례 신뢰도, 현실성 있는 금액 제시, 검증된 정보 느낌",
-      "example": "월 300만원 버는 직장인이 AI한테 돈 버는 법 배웠다고?",
+      "pattern": "AI가 알려주는 [주제]",
+      "reason": "AI 권위 활용",
+      "example": "AI가 알려주는 부업 비법",
       "click_rate": 0.25,
       "avg_views": 110000,
       "frequency": "low",
@@ -57,27 +57,27 @@
   "trending_keywords": [
     {
       "keyword": "수익",
-      "weight": 1.8000000000000003,
+      "weight": 1.9000000000000004,
       "views_boost": 2.0
     },
     {
       "keyword": "부업",
-      "weight": 1.7000000000000002,
+      "weight": 1.8000000000000003,
       "views_boost": 1.9
     },
     {
       "keyword": "AI",
-      "weight": 1.6000000000000003,
+      "weight": 1.7000000000000004,
       "views_boost": 1.8
     },
     {
       "keyword": "자동화",
-      "weight": 1.6000000000000003,
+      "weight": 1.7000000000000004,
       "views_boost": 1.5
     },
     {
       "keyword": "투자",
-      "weight": 1.4000000000000001,
+      "weight": 1.5000000000000002,
       "views_boost": 1.4
     },
     {
@@ -138,11 +138,11 @@
       "avg_views": 70000
     }
   ],
-  "prompt_boost": "경고형/숨겨진 정보/수익 인증/수치화된 성과를 조합한 제목",
+  "prompt_boost": "오늘의 트렌드: 부업·AI 키워드 + 금지형/숫자형 패턴 우선 적용",
   "hot_categories": [
-    "AI/기술 부업",
-    "수익 창출 노하우",
-    "실패 사례 분석"
+    "부업/수익",
+    "AI/기술",
+    "자기계발"
   ],
   "today_prompt": "오늘(수) 최적 제목 패턴: ❌ [주제] 하지마세요 (부정형 경고) | 우선 키워드: 수익, 부업, AI | 트렌딩 카테고리: AI/기술 부업, 수익 창출 노하우 | 경고형/숨겨진 정보/수익 인증/수치화된 성과를 조합한 제목",
   "today_weekday": "수"
