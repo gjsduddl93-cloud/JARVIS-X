@@ -1,8 +1,6 @@
 name: Weekly Long Video (금요일 18:00 KST)
 
 on:
-  schedule:
-    - cron: '0 9 * * 5'   # 금요일 09:00 UTC = 18:00 KST
   workflow_dispatch:        # 수동 실행
 
 jobs:
