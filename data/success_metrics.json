@@ -1,8 +1,8 @@
 {
-  "updated_at": "20260723",
-  "total_videos": 133,
-  "avg_views": 27,
-  "max_views": 1272,
+  "updated_at": "20260724",
+  "total_videos": 138,
+  "avg_views": 72,
+  "max_views": 2402,
   "success_threshold": 10000,
   "success_count": 0,
   "videos": {
@@ -1179,29 +1179,74 @@
     "mopuk_ZU8m8": {
       "title": "농담 한마디가 영상을 통째로 삭제? #Shorts",
       "published_at": "2026-07-23T10:38:31Z",
-      "views": 1266,
+      "views": 1281,
       "likes": 3,
-      "like_ratio": 0.0024,
+      "like_ratio": 0.0023,
       "url": "https://youtube.com/watch?v=mopuk_ZU8m8",
-      "tracked_at": "20260723"
+      "tracked_at": "20260724"
     },
     "WjAu_eo9yFA": {
       "title": "이 둘, 최근 열애 사실이 알려졌다 #Shorts",
       "published_at": "2026-07-23T10:38:07Z",
-      "views": 1048,
+      "views": 1128,
       "likes": 1,
-      "like_ratio": 0.001,
+      "like_ratio": 0.0009,
       "url": "https://youtube.com/watch?v=WjAu_eo9yFA",
-      "tracked_at": "20260723"
+      "tracked_at": "20260724"
     },
     "5EeQwFDbQQs": {
       "title": "이 커플, 1년 전에도 이미 끝났었다? #Shorts",
       "published_at": "2026-07-23T10:38:03Z",
-      "views": 1272,
-      "likes": 13,
-      "like_ratio": 0.0102,
+      "views": 1289,
+      "likes": 14,
+      "like_ratio": 0.0109,
       "url": "https://youtube.com/watch?v=5EeQwFDbQQs",
-      "tracked_at": "20260723"
+      "tracked_at": "20260724"
+    },
+    "YU8rBmbEhPc": {
+      "title": "제니가 올린 사진 한 장, 이 남자 정체가 심상찮다 #Shorts",
+      "published_at": "2026-07-24T12:08:51Z",
+      "views": 875,
+      "likes": 3,
+      "like_ratio": 0.0034,
+      "url": "https://youtube.com/watch?v=YU8rBmbEhPc",
+      "tracked_at": "20260724"
+    },
+    "ltQtHpEnsVY": {
+      "title": "20년째 달리는 남자, 그가 달리는 진짜 이유 (감동 실화) #Shorts",
+      "published_at": "2026-07-24T07:24:50Z",
+      "views": 1160,
+      "likes": 8,
+      "like_ratio": 0.0069,
+      "url": "https://youtube.com/watch?v=ltQtHpEnsVY",
+      "tracked_at": "20260724"
+    },
+    "Mohsi9UDyQ0": {
+      "title": "조용히 사라졌던 그 배우가 남몰래 해온 일 #Shorts",
+      "published_at": "2026-07-24T07:03:36Z",
+      "views": 760,
+      "likes": 5,
+      "like_ratio": 0.0066,
+      "url": "https://youtube.com/watch?v=Mohsi9UDyQ0",
+      "tracked_at": "20260724"
+    },
+    "vkIqmKZXhA8": {
+      "title": "완전히 무너졌던 김수현, 복귀와 동시에 꺼낸 '한 방' #Shorts",
+      "published_at": "2026-07-24T05:53:09Z",
+      "views": 1074,
+      "likes": 11,
+      "like_ratio": 0.0102,
+      "url": "https://youtube.com/watch?v=vkIqmKZXhA8",
+      "tracked_at": "20260724"
+    },
+    "jYFryqBO52M": {
+      "title": "대한민국, OECD 국가 중 R&D 투자 2위 (2023년 기준)",
+      "published_at": "2026-07-24T03:27:06Z",
+      "views": 2402,
+      "likes": 4,
+      "like_ratio": 0.0017,
+      "url": "https://youtube.com/watch?v=jYFryqBO52M",
+      "tracked_at": "20260724"
     }
   }
 }
