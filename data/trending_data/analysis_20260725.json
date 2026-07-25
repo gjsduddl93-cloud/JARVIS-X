@@ -1,0 +1,35 @@
+{
+  "date": "20260725",
+  "analysis": {
+    "top_patterns": [
+      {
+        "pattern": "[감정 이모지] + [관계 키워드] (Sister/Brother/Couple)",
+        "reason": "가족 관계와 감정 표현의 조합이 높은 감정 이입 유도, 공유욕 증가",
+        "example": "Sister love 💕 #shorts"
+      },
+      {
+        "pattern": "[캐릭터/유명IP] + [반전/웃음 요소] (Real End Twist, Imitating)",
+        "reason": "예측 불가능한 전개로 시청 완료율 높음, 댓글 유도 효과",
+        "example": "Tom 🍓 Jerry Real End Twist 😂🎈 #shorts"
+      },
+      {
+        "pattern": "[교육/학습] + [노래/춤/신체활동] (Kids Content)",
+        "reason": "부모층 타겟 + 아동 교육 콘텐츠 조합으로 재생 시간 장시간 유지",
+        "example": "Belly Button Song Dance! Learn about the Body! #Shorts"
+      }
+    ],
+    "hot_keywords": [
+      "반전/충격",
+      "형제자매/가족 관계",
+      "캐릭터/IP 활용",
+      "따라하기/모방",
+      "키즈/교육 콘텐츠"
+    ],
+    "top_categories": [
+      "감정 공감 콘텐츠 (가족/관계)",
+      "유명 IP/캐릭터 패러디",
+      "아동 교육/학습 영상"
+    ],
+    "prompt_boost": "반전 있는 가족/관계 이야기 + 감정 이모지 + IP/유명 캐릭터 활용"
+  }
+}

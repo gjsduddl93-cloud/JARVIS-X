@@ -1,11 +1,11 @@
 {
-  "updated_at": "20260724",
-  "version": 13,
+  "updated_at": "20260725",
+  "version": 14,
   "title_patterns": [
     {
-      "pattern": "❌ [주제] [부정적 결과] 된 이유",
-      "reason": "호기심 자극과 실패 사례를 통한 교육적 가치로 높은 클릭율 유도",
-      "example": "❌ AI 유튜브 채널로 부업 시작했다가 수익 0원 된 이유",
+      "pattern": "[감정 이모지] + [관계 키워드] (Sister/Brother/Couple)",
+      "reason": "가족 관계와 감정 표현의 조합이 높은 감정 이입 유도, 공유욕 증가",
+      "example": "Sister love 💕 #shorts",
       "click_rate": 0.35,
       "avg_views": 150000,
       "frequency": "high",
@@ -20,9 +20,9 @@
       ]
     },
     {
-      "pattern": "[은폐된 사실/반전] [이모지] #Shorts",
-      "reason": "숨겨진 정보 공개 욕구와 감정적 반전으로 시청 유도",
-      "example": "이 커플, 1년 전에도 이미 끝났었다?",
+      "pattern": "[캐릭터/유명IP] + [반전/웃음 요소] (Real End Twist, Imitating)",
+      "reason": "예측 불가능한 전개로 시청 완료율 높음, 댓글 유도 효과",
+      "example": "Tom 🍓 Jerry Real End Twist 😂🎈 #shorts",
       "click_rate": 0.3,
       "avg_views": 130000,
       "frequency": "medium",
@@ -37,9 +37,9 @@
       ]
     },
     {
-      "pattern": "❌ [숨겨진 정보] [직업군] 모르는 [수익법]",
-      "reason": "희소성과 특정 타겟층의 배제감으로 클릭 욕구 극대화",
-      "example": "❌ 이 AI 부업 무시하지마세요 | 직장인 10명 중 7명 모르는",
+      "pattern": "[교육/학습] + [노래/춤/신체활동] (Kids Content)",
+      "reason": "부모층 타겟 + 아동 교육 콘텐츠 조합으로 재생 시간 장시간 유지",
+      "example": "Belly Button Song Dance! Learn about the Body! #Shorts",
       "click_rate": 0.25,
       "avg_views": 110000,
       "frequency": "low",
@@ -138,11 +138,11 @@
       "avg_views": 70000
     }
   ],
-  "prompt_boost": "숨겨진 정보 공개 + 특정층 배제감 + 부정적 결과 반전 조합으로 클릭 극대화",
+  "prompt_boost": "반전 있는 가족/관계 이야기 + 감정 이모지 + IP/유명 캐릭터 활용",
   "hot_categories": [
-    "금융/수익 정보",
-    "관계/드라마",
-    "밈/반전 엔터테인먼트"
+    "감정 공감 콘텐츠 (가족/관계)",
+    "유명 IP/캐릭터 패러디",
+    "아동 교육/학습 영상"
   ],
   "today_prompt": "오늘(금) 최적 제목 패턴: ❌ [주제] [부정적 결과] 된 이유 | 우선 키워드: 수익, 부업, AI | 트렌딩 카테고리: 금융/수익 정보, 관계/드라마 | 숨겨진 정보 공개 + 특정층 배제감 + 부정적 결과 반전 조합으로 클릭 극대화",
   "today_weekday": "금"
