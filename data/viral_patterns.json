@@ -1,10 +1,10 @@
 {
-  "updated_at": "20260725",
-  "version": 14,
+  "updated_at": "20260726",
+  "version": 15,
   "title_patterns": [
     {
-      "pattern": "[감정 이모지] + [관계 키워드] (Sister/Brother/Couple)",
-      "reason": "가족 관계와 감정 표현의 조합이 높은 감정 이입 유도, 공유욕 증가",
+      "pattern": "\"[감정 이모지] [관계명] [상황]\" 형식",
+      "reason": "가족/형제 관계의 따뜻함과 감정 공감으로 높은 조회수(220억회대)",
       "example": "Sister love 💕 #shorts",
       "click_rate": 0.35,
       "avg_views": 150000,
@@ -20,9 +20,9 @@
       ]
     },
     {
-      "pattern": "[캐릭터/유명IP] + [반전/웃음 요소] (Real End Twist, Imitating)",
-      "reason": "예측 불가능한 전개로 시청 완료율 높음, 댓글 유도 효과",
-      "example": "Tom 🍓 Jerry Real End Twist 😂🎈 #shorts",
+      "pattern": "\"[캐릭터/인물] [행동] [반전/이유]\" 형식",
+      "reason": "스토리텔링과 예상 깨기로 클릭 유도(200억회대)",
+      "example": "Tom 🍓 Jerry (Rithvi&Kavi)Real End Twist 😂🎈 #shorts",
       "click_rate": 0.3,
       "avg_views": 130000,
       "frequency": "medium",
@@ -37,9 +37,9 @@
       ]
     },
     {
-      "pattern": "[교육/학습] + [노래/춤/신체활동] (Kids Content)",
-      "reason": "부모층 타겟 + 아동 교육 콘텐츠 조합으로 재생 시간 장시간 유지",
-      "example": "Belly Button Song Dance! Learn about the Body! #Shorts",
+      "pattern": "\"[교육/학습 주제] [이모지] [브랜드명]\" 형식",
+      "reason": "아동 콘텐츠 + 교육 가치로 바이럴 확산(100억회대)",
+      "example": "Belly Button Song Dance! Learn about the Body! CoComelon #Shorts",
       "click_rate": 0.25,
       "avg_views": 110000,
       "frequency": "low",
@@ -82,7 +82,7 @@
     },
     {
       "keyword": "반전",
-      "weight": 1.3,
+      "weight": 1.4000000000000001,
       "views_boost": 1.4
     },
     {
@@ -138,11 +138,11 @@
       "avg_views": 70000
     }
   ],
-  "prompt_boost": "반전 있는 가족/관계 이야기 + 감정 이모지 + IP/유명 캐릭터 활용",
+  "prompt_boost": "감정 공감 + 반전 요소 + 이모지 활용으로 가족층 타겟 바이럴 콘텐츠",
   "hot_categories": [
-    "감정 공감 콘텐츠 (가족/관계)",
-    "유명 IP/캐릭터 패러디",
-    "아동 교육/학습 영상"
+    "가족/감정 콘텐츠 (형제애, 부모자식)",
+    "아동교육 (노래, 춤, 학습)",
+    "애니메이션 패러디/반전 스토리"
   ],
   "today_prompt": "오늘(토) 최적 제목 패턴: [감정 이모지] + [관계 키워드] (Sister/Brother/Couple) | 우선 키워드: 수익, 부업, AI | 트렌딩 카테고리: 감정 공감 콘텐츠 (가족/관계), 유명 IP/캐릭터 패러디 | 반전 있는 가족/관계 이야기 + 감정 이모지 + IP/유명 캐릭터 활용",
   "today_weekday": "토"
