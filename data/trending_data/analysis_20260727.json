@@ -1,0 +1,35 @@
+{
+  "date": "20260727",
+  "analysis": {
+    "top_patterns": [
+      {
+        "pattern": "[감정 반응] + 반전 요소 (😂🎈, 💕, #RealEndTwist)",
+        "reason": "예상을 뒤엎는 반전이 호기심을 유발하고 높은 클릭률 생성",
+        "example": "Tom 🍓 Jerry Real End Twist 😂🎈"
+      },
+      {
+        "pattern": "교육+엔터테인ment (노래, 춤, 학습 콘텐츠)",
+        "reason": "키즈 콘텐츠와 학습 가치를 결합하여 부모층 신뢰도와 재생 수 증가",
+        "example": "Belly Button Song Dance! Learn about the Body! CoComelon"
+      },
+      {
+        "pattern": "관계/감정 소재 (형제자매, 나눔, 일상의 따뜻함)",
+        "reason": "감정 이입이 쉽고 공유욕이 높아 바이럴 확산 효과",
+        "example": "Sister love 💕 #shorts"
+      }
+    ],
+    "hot_keywords": [
+      "반전",
+      "감동실화",
+      "키즈콘텐츠",
+      "따뜻한일상",
+      "학습동영상"
+    ],
+    "top_categories": [
+      "키즈/가족 콘텐츠",
+      "감정/감동 스토리",
+      "교육/학습 숏폼"
+    ],
+    "prompt_boost": "반전 요소+감정 반응 이모지로 호기심 자극, 키즈/가족 대상 따뜻함과 교육성 결합"
+  }
+}

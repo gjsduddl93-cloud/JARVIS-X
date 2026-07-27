@@ -1,11 +1,11 @@
 {
-  "updated_at": "20260726",
-  "version": 15,
+  "updated_at": "20260727",
+  "version": 16,
   "title_patterns": [
     {
-      "pattern": "\"[감정 이모지] [관계명] [상황]\" 형식",
-      "reason": "가족/형제 관계의 따뜻함과 감정 공감으로 높은 조회수(220억회대)",
-      "example": "Sister love 💕 #shorts",
+      "pattern": "[감정 반응] + 반전 요소 (😂🎈, 💕, #RealEndTwist)",
+      "reason": "예상을 뒤엎는 반전이 호기심을 유발하고 높은 클릭률 생성",
+      "example": "Tom 🍓 Jerry Real End Twist 😂🎈",
       "click_rate": 0.35,
       "avg_views": 150000,
       "frequency": "high",
@@ -20,9 +20,9 @@
       ]
     },
     {
-      "pattern": "\"[캐릭터/인물] [행동] [반전/이유]\" 형식",
-      "reason": "스토리텔링과 예상 깨기로 클릭 유도(200억회대)",
-      "example": "Tom 🍓 Jerry (Rithvi&Kavi)Real End Twist 😂🎈 #shorts",
+      "pattern": "교육+엔터테인ment (노래, 춤, 학습 콘텐츠)",
+      "reason": "키즈 콘텐츠와 학습 가치를 결합하여 부모층 신뢰도와 재생 수 증가",
+      "example": "Belly Button Song Dance! Learn about the Body! CoComelon",
       "click_rate": 0.3,
       "avg_views": 130000,
       "frequency": "medium",
@@ -37,9 +37,9 @@
       ]
     },
     {
-      "pattern": "\"[교육/학습 주제] [이모지] [브랜드명]\" 형식",
-      "reason": "아동 콘텐츠 + 교육 가치로 바이럴 확산(100억회대)",
-      "example": "Belly Button Song Dance! Learn about the Body! CoComelon #Shorts",
+      "pattern": "관계/감정 소재 (형제자매, 나눔, 일상의 따뜻함)",
+      "reason": "감정 이입이 쉽고 공유욕이 높아 바이럴 확산 효과",
+      "example": "Sister love 💕 #shorts",
       "click_rate": 0.25,
       "avg_views": 110000,
       "frequency": "low",
@@ -82,7 +82,7 @@
     },
     {
       "keyword": "반전",
-      "weight": 1.4000000000000001,
+      "weight": 1.5000000000000002,
       "views_boost": 1.4
     },
     {
@@ -138,11 +138,11 @@
       "avg_views": 70000
     }
   ],
-  "prompt_boost": "감정 공감 + 반전 요소 + 이모지 활용으로 가족층 타겟 바이럴 콘텐츠",
+  "prompt_boost": "반전 요소+감정 반응 이모지로 호기심 자극, 키즈/가족 대상 따뜻함과 교육성 결합",
   "hot_categories": [
-    "가족/감정 콘텐츠 (형제애, 부모자식)",
-    "아동교육 (노래, 춤, 학습)",
-    "애니메이션 패러디/반전 스토리"
+    "키즈/가족 콘텐츠",
+    "감정/감동 스토리",
+    "교육/학습 숏폼"
   ],
   "today_prompt": "오늘(일) 최적 제목 패턴: \"[감정 이모지] [관계명] [상황]\" 형식 | 우선 키워드: 수익, 부업, AI | 트렌딩 카테고리: 가족/감정 콘텐츠 (형제애, 부모자식), 아동교육 (노래, 춤, 학습) | 감정 공감 + 반전 요소 + 이모지 활용으로 가족층 타겟 바이럴 콘텐츠",
   "today_weekday": "일"
