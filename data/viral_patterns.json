@@ -1,11 +1,11 @@
 {
-  "updated_at": "20260727",
-  "version": 16,
+  "updated_at": "20260728",
+  "version": 17,
   "title_patterns": [
     {
-      "pattern": "[감정 반응] + 반전 요소 (😂🎈, 💕, #RealEndTwist)",
-      "reason": "예상을 뒤엎는 반전이 호기심을 유발하고 높은 클릭률 생성",
-      "example": "Tom 🍓 Jerry Real End Twist 😂🎈",
+      "pattern": "[감정 유발] + [반전/예상 밖의 행동]",
+      "reason": "호기심 자극과 감정적 공감으로 높은 클릭율 유도",
+      "example": "경매로 넘어가던 날, 이경실이 한 행동에 다들 눈물",
       "click_rate": 0.35,
       "avg_views": 150000,
       "frequency": "high",
@@ -20,9 +20,9 @@
       ]
     },
     {
-      "pattern": "교육+엔터테인ment (노래, 춤, 학습 콘텐츠)",
-      "reason": "키즈 콘텐츠와 학습 가치를 결합하여 부모층 신뢰도와 재생 수 증가",
-      "example": "Belly Button Song Dance! Learn about the Body! CoComelon",
+      "pattern": "[연예인/유명인] + [논란/화제] + [최신 정보]",
+      "reason": "실시간 화제성과 궁금증으로 즉각적 반응 유도",
+      "example": "남주혁 '동궁' 논란 속 4년 전 학폭 의혹까지 재조명",
       "click_rate": 0.3,
       "avg_views": 130000,
       "frequency": "medium",
@@ -37,9 +37,9 @@
       ]
     },
     {
-      "pattern": "관계/감정 소재 (형제자매, 나눔, 일상의 따뜻함)",
-      "reason": "감정 이입이 쉽고 공유욕이 높아 바이럴 확산 효과",
-      "example": "Sister love 💕 #shorts",
+      "pattern": "[랭킹] + [TOP 수치] + [카테고리]",
+      "reason": "비교와 순위 선호도로 클릭 및 공유 욕구 증가",
+      "example": "트로트 상 가장 많이 받은 가수 TOP5",
       "click_rate": 0.25,
       "avg_views": 110000,
       "frequency": "low",
@@ -76,12 +76,12 @@
       "views_boost": 1.5
     },
     {
-      "keyword": "투자",
-      "weight": 1.5000000000000002,
+      "keyword": "반전",
+      "weight": 1.6000000000000003,
       "views_boost": 1.4
     },
     {
-      "keyword": "반전",
+      "keyword": "투자",
       "weight": 1.5000000000000002,
       "views_boost": 1.4
     },
@@ -138,11 +138,11 @@
       "avg_views": 70000
     }
   ],
-  "prompt_boost": "반전 요소+감정 반응 이모지로 호기심 자극, 키즈/가족 대상 따뜻함과 교육성 결합",
+  "prompt_boost": "감정 반전과 의외성을 담되, 연예인 화제성과 따뜻한 휴먼드라마를 결합",
   "hot_categories": [
-    "키즈/가족 콘텐츠",
-    "감정/감동 스토리",
-    "교육/학습 숏폼"
+    "감성/감동 스토리",
+    "연예인 뉴스/논란",
+    "랭킹/비교 콘텐츠"
   ],
   "today_prompt": "오늘(월) 최적 제목 패턴: [감정 반응] + 반전 요소 (😂🎈, 💕, #RealEndTwist) | 우선 키워드: 수익, 부업, AI | 트렌딩 카테고리: 키즈/가족 콘텐츠, 감정/감동 스토리 | 반전 요소+감정 반응 이모지로 호기심 자극, 키즈/가족 대상 따뜻함과 교육성 결합",
   "today_weekday": "월"
