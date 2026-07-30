@@ -1,0 +1,35 @@
+{
+  "date": "20260730",
+  "analysis": {
+    "top_patterns": [
+      {
+        "pattern": "「감정 반전 + 행동 결과」 형식",
+        "reason": "예상과 다른 결과로 시청자의 호기심과 감정 이입 유도, 높은 재생률 생성",
+        "example": "경매 위기 속 한 행동에 다들 눈물 #Shorts"
+      },
+      {
+        "pattern": "「반복되는 콘텐츠 + 시리즈 감」",
+        "reason": "Monica Toy, Sister love 등 같은 채널의 유사 영상이 반복 트렌딩되어 알고리즘 선호도 높음",
+        "example": "Sister love 💕 #shorts (3개 영상 모두 상위)"
+      },
+      {
+        "pattern": "「아동/교육 + 캐릭터 IP」 형식",
+        "reason": "CoComelon, Netflix Jr 등 검증된 브랜드의 교육적 콘텐츠가 부모 시청층을 확보하며 지속적 조회수 확보",
+        "example": "Belly Button Song Dance! Learn about the Body! CoComelon #Shorts"
+      }
+    ],
+    "hot_keywords": [
+      "반전",
+      "눈물",
+      "논란",
+      "정체",
+      "숨겨진 진실"
+    ],
+    "top_categories": [
+      "드라마/감정 반전 콘텐츠",
+      "유명인 논란/뒷얘기",
+      "아동 교육 콘텐츠"
+    ],
+    "prompt_boost": "감정적 반전과 숨겨진 진실 공개 요소를 결합, 클릭 유도 강한 제목으로"
+  }
+}
