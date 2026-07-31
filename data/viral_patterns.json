@@ -1,11 +1,11 @@
 {
-  "updated_at": "20260730",
-  "version": 19,
+  "updated_at": "20260731",
+  "version": 20,
   "title_patterns": [
     {
-      "pattern": "「감정 반전 + 행동 결과」 형식",
-      "reason": "예상과 다른 결과로 시청자의 호기심과 감정 이입 유도, 높은 재생률 생성",
-      "example": "경매 위기 속 한 행동에 다들 눈물 #Shorts",
+      "pattern": "[감정/반전] + 이모지 + #shorts",
+      "reason": "시각적 임팩트와 호기심 유발로 클릭 유도율 높음 (Sister love, Tom Jerry 류 2-30억 조회)",
+      "example": "Sister love 💕 #shorts",
       "click_rate": 0.35,
       "avg_views": 150000,
       "frequency": "high",
@@ -20,9 +20,9 @@
       ]
     },
     {
-      "pattern": "「반복되는 콘텐츠 + 시리즈 감」",
-      "reason": "Monica Toy, Sister love 등 같은 채널의 유사 영상이 반복 트렌딩되어 알고리즘 선호도 높음",
-      "example": "Sister love 💕 #shorts (3개 영상 모두 상위)",
+      "pattern": "[행동/상황] Twist/반전 😂 + #shorts",
+      "reason": "예상 깨기와 웃음 요소로 공유율과 재시청 높음",
+      "example": "Tom 🍓 Jerry Real End Twist 😂🎈 #shorts",
       "click_rate": 0.3,
       "avg_views": 130000,
       "frequency": "medium",
@@ -37,8 +37,8 @@
       ]
     },
     {
-      "pattern": "「아동/교육 + 캐릭터 IP」 형식",
-      "reason": "CoComelon, Netflix Jr 등 검증된 브랜드의 교육적 콘텐츠가 부모 시청층을 확보하며 지속적 조회수 확보",
+      "pattern": "[교육/학습] + [캐릭터명/채널명] + #shorts",
+      "reason": "아동 콘텐츠 고정 수요와 교육 가치로 안정적 조회 (CoComelon, Domi 류 10억+ 조회)",
       "example": "Belly Button Song Dance! Learn about the Body! CoComelon #Shorts",
       "click_rate": 0.25,
       "avg_views": 110000,
@@ -61,6 +61,11 @@
       "views_boost": 2.0
     },
     {
+      "keyword": "반전",
+      "weight": 1.9000000000000006,
+      "views_boost": 1.4
+    },
+    {
       "keyword": "부업",
       "weight": 1.9000000000000004,
       "views_boost": 1.9
@@ -69,11 +74,6 @@
       "keyword": "AI",
       "weight": 1.8000000000000005,
       "views_boost": 1.8
-    },
-    {
-      "keyword": "반전",
-      "weight": 1.8000000000000005,
-      "views_boost": 1.4
     },
     {
       "keyword": "자동화",
@@ -138,11 +138,11 @@
       "avg_views": 70000
     }
   ],
-  "prompt_boost": "감정적 반전과 숨겨진 진실 공개 요소를 결합, 클릭 유도 강한 제목으로",
+  "prompt_boost": "한국 유명인/감정 반전 스토리 + 이모지로 클릭 유도, 감정 공감 중심의 제목 구성",
   "hot_categories": [
-    "드라마/감정 반전 콘텐츠",
-    "유명인 논란/뒷얘기",
-    "아동 교육 콘텐츠"
+    "아동 교육 콘텐츠 (CoComelon, Netflix Jr, 키즈 채널)",
+    "감정/감동/공감 스토리 (형제자매, 가족 관계)",
+    "애니메이션 밈/반전 콘텐츠 (Tom Jerry, 캐릭터 패러디)"
   ],
   "today_prompt": "오늘(목) 최적 제목 패턴: 「감정 반전 + 행동 결과」 형식 | 우선 키워드: 수익, 부업, AI | 트렌딩 카테고리: 드라마/감정 반전 콘텐츠, 유명인 논란/뒷얘기 | 감정적 반전과 숨겨진 진실 공개 요소를 결합, 클릭 유도 강한 제목으로",
   "today_weekday": "목"

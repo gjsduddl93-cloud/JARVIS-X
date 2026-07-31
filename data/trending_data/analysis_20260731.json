@@ -1,0 +1,35 @@
+{
+  "date": "20260731",
+  "analysis": {
+    "top_patterns": [
+      {
+        "pattern": "[감정/반전] + 이모지 + #shorts",
+        "reason": "시각적 임팩트와 호기심 유발로 클릭 유도율 높음 (Sister love, Tom Jerry 류 2-30억 조회)",
+        "example": "Sister love 💕 #shorts"
+      },
+      {
+        "pattern": "[행동/상황] Twist/반전 😂 + #shorts",
+        "reason": "예상 깨기와 웃음 요소로 공유율과 재시청 높음",
+        "example": "Tom 🍓 Jerry Real End Twist 😂🎈 #shorts"
+      },
+      {
+        "pattern": "[교육/학습] + [캐릭터명/채널명] + #shorts",
+        "reason": "아동 콘텐츠 고정 수요와 교육 가치로 안정적 조회 (CoComelon, Domi 류 10억+ 조회)",
+        "example": "Belly Button Song Dance! Learn about the Body! CoComelon #Shorts"
+      }
+    ],
+    "hot_keywords": [
+      "반전",
+      "아동/키즈",
+      "일상공유",
+      "감정",
+      "챌린지"
+    ],
+    "top_categories": [
+      "아동 교육 콘텐츠 (CoComelon, Netflix Jr, 키즈 채널)",
+      "감정/감동/공감 스토리 (형제자매, 가족 관계)",
+      "애니메이션 밈/반전 콘텐츠 (Tom Jerry, 캐릭터 패러디)"
+    ],
+    "prompt_boost": "한국 유명인/감정 반전 스토리 + 이모지로 클릭 유도, 감정 공감 중심의 제목 구성"
+  }
+}
