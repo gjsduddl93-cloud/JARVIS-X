@@ -1,0 +1,35 @@
+{
+  "date": "20260801",
+  "analysis": {
+    "top_patterns": [
+      {
+        "pattern": "[감정 이모지] [관계/상황] #shorts",
+        "reason": "가족·우정 관계의 따뜻함과 감정 자극으로 높은 감정 이입률",
+        "example": "Sister love 💕 #shorts (22억+ 조회)"
+      },
+      {
+        "pattern": "[캐릭터/인물] [반전 요소] 😂🎈 #shorts",
+        "reason": "예상 밖의 전개와 웃음 요소로 높은 재시청율과 공유율",
+        "example": "Tom 🍓 Jerry Real End Twist 😂🎈 (20억+ 조회)"
+      },
+      {
+        "pattern": "[교육/일상 콘텐츠] [유명 채널명] #shorts",
+        "reason": "신뢰도 높은 브랜드 연계로 어린이·가족층 조회 증대",
+        "example": "Belly Button Song Dance! CoComelon #Shorts (12억+ 조회)"
+      }
+    ],
+    "hot_keywords": [
+      "관계 (가족/우정/형제)",
+      "반전/뒷전개",
+      "키즈/교육 콘텐츠",
+      "음식/간식",
+      "애니메이션/카툰"
+    ],
+    "top_categories": [
+      "감정 자극형 일상/관계 콘텐츠",
+      "어린이/교육용 노래·춤",
+      "음식·요리 제작 영상"
+    ],
+    "prompt_boost": "감정 반전 + 관계 공감 + 캐릭터/브랜드 활용한 숏폼 제목 생성"
+  }
+}
