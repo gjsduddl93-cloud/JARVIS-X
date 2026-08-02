@@ -1,0 +1,35 @@
+{
+  "date": "20260802",
+  "analysis": {
+    "top_patterns": [
+      {
+        "pattern": "[감정 반응] + [관계/상황] + 이모지",
+        "reason": "Sister love, Sharing 등 감정 공감대가 높은 주제가 20억+ 조회수 기록. 따뜻한 감정 트리거가 클릭율 극대화",
+        "example": "형제애 💕 예상 못한 반전 #shorts"
+      },
+      {
+        "pattern": "[인물/캐릭터] + [예상치못한결과] + Real End Twist",
+        "reason": "Tom & Jerry 영상이 20억+ 조회수. 익숙한 IP에 반전 요소를 추가하면 높은 재생율 달성",
+        "example": "연예인 예상 밖의 선택 😂 진짜 반전 #shorts"
+      },
+      {
+        "pattern": "[행동/과정] + 이모지 + [결과/해석]",
+        "reason": "Making, 춤 배우기 등 교육적 콘텐츠가 10억+ 조회수. 과정 중심의 시각적 흥미도 높음",
+        "example": "점토로 와플 만들기 🧇 뜻밖의 결말 #shorts"
+      }
+    ],
+    "hot_keywords": [
+      "반전",
+      "감정",
+      "아이/키즈",
+      "일상",
+      "캐릭터"
+    ],
+    "top_categories": [
+      "감정/관계 콘텐츠 (형제애, 나눔)",
+      "키즈/애니메이션 (CoComelon, Bheem)",
+      "일상 재미/반전 (Making, 챌린지)"
+    ],
+    "prompt_boost": "한국 유튜브쇼츠: 감정 공감 + 이모지 + 반전 요소 조합으로 제목 생성"
+  }
+}

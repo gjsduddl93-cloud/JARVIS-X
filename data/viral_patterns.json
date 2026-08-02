@@ -1,11 +1,11 @@
 {
-  "updated_at": "20260801",
-  "version": 21,
+  "updated_at": "20260802",
+  "version": 22,
   "title_patterns": [
     {
-      "pattern": "[감정 이모지] [관계/상황] #shorts",
-      "reason": "가족·우정 관계의 따뜻함과 감정 자극으로 높은 감정 이입률",
-      "example": "Sister love 💕 #shorts (22억+ 조회)",
+      "pattern": "[감정 반응] + [관계/상황] + 이모지",
+      "reason": "Sister love, Sharing 등 감정 공감대가 높은 주제가 20억+ 조회수 기록. 따뜻한 감정 트리거가 클릭율 극대화",
+      "example": "형제애 💕 예상 못한 반전 #shorts",
       "click_rate": 0.35,
       "avg_views": 150000,
       "frequency": "high",
@@ -20,9 +20,9 @@
       ]
     },
     {
-      "pattern": "[캐릭터/인물] [반전 요소] 😂🎈 #shorts",
-      "reason": "예상 밖의 전개와 웃음 요소로 높은 재시청율과 공유율",
-      "example": "Tom 🍓 Jerry Real End Twist 😂🎈 (20억+ 조회)",
+      "pattern": "[인물/캐릭터] + [예상치못한결과] + Real End Twist",
+      "reason": "Tom & Jerry 영상이 20억+ 조회수. 익숙한 IP에 반전 요소를 추가하면 높은 재생율 달성",
+      "example": "연예인 예상 밖의 선택 😂 진짜 반전 #shorts",
       "click_rate": 0.3,
       "avg_views": 130000,
       "frequency": "medium",
@@ -37,9 +37,9 @@
       ]
     },
     {
-      "pattern": "[교육/일상 콘텐츠] [유명 채널명] #shorts",
-      "reason": "신뢰도 높은 브랜드 연계로 어린이·가족층 조회 증대",
-      "example": "Belly Button Song Dance! CoComelon #Shorts (12억+ 조회)",
+      "pattern": "[행동/과정] + 이모지 + [결과/해석]",
+      "reason": "Making, 춤 배우기 등 교육적 콘텐츠가 10억+ 조회수. 과정 중심의 시각적 흥미도 높음",
+      "example": "점토로 와플 만들기 🧇 뜻밖의 결말 #shorts",
       "click_rate": 0.25,
       "avg_views": 110000,
       "frequency": "low",
@@ -62,7 +62,7 @@
     },
     {
       "keyword": "반전",
-      "weight": 1.9000000000000006,
+      "weight": 2.0,
       "views_boost": 1.4
     },
     {
@@ -138,11 +138,11 @@
       "avg_views": 70000
     }
   ],
-  "prompt_boost": "감정 반전 + 관계 공감 + 캐릭터/브랜드 활용한 숏폼 제목 생성",
+  "prompt_boost": "한국 유튜브쇼츠: 감정 공감 + 이모지 + 반전 요소 조합으로 제목 생성",
   "hot_categories": [
-    "감정 자극형 일상/관계 콘텐츠",
-    "어린이/교육용 노래·춤",
-    "음식·요리 제작 영상"
+    "감정/관계 콘텐츠 (형제애, 나눔)",
+    "키즈/애니메이션 (CoComelon, Bheem)",
+    "일상 재미/반전 (Making, 챌린지)"
   ],
   "today_prompt": "오늘(토) 최적 제목 패턴: [감정 이모지] [관계/상황] #shorts | 우선 키워드: 수익, 반전, 부업 | 트렌딩 카테고리: 감정 자극형 일상/관계 콘텐츠, 어린이/교육용 노래·춤 | 감정 반전 + 관계 공감 + 캐릭터/브랜드 활용한 숏폼 제목 생성",
   "today_weekday": "토"
