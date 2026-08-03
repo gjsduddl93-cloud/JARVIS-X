@@ -1,0 +1,35 @@
+{
+  "date": "20260803",
+  "analysis": {
+    "top_patterns": [
+      {
+        "pattern": "[감정 이모지] [관계/상황] #shorts",
+        "reason": "감정적 공감과 이모지로 즉각적 클릭 유도, 시리즈물로 반복 시청 유도",
+        "example": "Sister love 💕 #shorts (22억+ 조회)"
+      },
+      {
+        "pattern": "[캐릭터] [반전/예상 밖의 결말] 😂🎈 #shorts",
+        "reason": "호기심과 웃음 유발, 유명 IP(Tom & Jerry) 활용으로 신뢰도 상승",
+        "example": "Tom 🍓 Jerry Real End Twist 😂🎈 (20억+ 조회)"
+      },
+      {
+        "pattern": "[교육/학습 콘텐츠] [노래/춤] #shorts",
+        "reason": "아동 학습 콘텐츠의 높은 반복 재생률, 부모의 공동 시청 증가",
+        "example": "Belly Button Song Dance! CoComelon (12억+ 조회)"
+      }
+    ],
+    "hot_keywords": [
+      "반전",
+      "감정",
+      "아동콘텐츠",
+      "캐릭터",
+      "일상"
+    ],
+    "top_categories": [
+      "감정공감/관계(형제자매, 가족)",
+      "교육/학습콘텐츠(유아용)",
+      "예능/웃음(반전/애니메이션밈)"
+    ],
+    "prompt_boost": "감정 이모지+관계/상황+반전요소 조합으로 클릭률 극대화. 아동층 타겟시 교육성 추가"
+  }
+}
