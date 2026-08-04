@@ -1,11 +1,11 @@
 {
-  "updated_at": "20260803",
-  "version": 23,
+  "updated_at": "20260804",
+  "version": 24,
   "title_patterns": [
     {
       "pattern": "[감정 이모지] [관계/상황] #shorts",
-      "reason": "감정적 공감과 이모지로 즉각적 클릭 유도, 시리즈물로 반복 시청 유도",
-      "example": "Sister love 💕 #shorts (22억+ 조회)",
+      "reason": "감정 표현과 이모지 조합으로 썸네일 클릭률 극대화, 반복 노출로 신뢰도 상승",
+      "example": "Sister love 💕 #shorts",
       "click_rate": 0.35,
       "avg_views": 150000,
       "frequency": "high",
@@ -20,9 +20,9 @@
       ]
     },
     {
-      "pattern": "[캐릭터] [반전/예상 밖의 결말] 😂🎈 #shorts",
-      "reason": "호기심과 웃음 유발, 유명 IP(Tom & Jerry) 활용으로 신뢰도 상승",
-      "example": "Tom 🍓 Jerry Real End Twist 😂🎈 (20억+ 조회)",
+      "pattern": "[캐릭터명] [예상 반전/결말] 😂🎈 #shorts",
+      "reason": "알려진 IP 활용으로 진입장벽 낮추고, 반전 예고로 호기심 유발",
+      "example": "Tom 🍓 Jerry (Rithvi&Kavi)Real End Twist 😂🎈 #shorts",
       "click_rate": 0.3,
       "avg_views": 130000,
       "frequency": "medium",
@@ -37,9 +37,9 @@
       ]
     },
     {
-      "pattern": "[교육/학습 콘텐츠] [노래/춤] #shorts",
-      "reason": "아동 학습 콘텐츠의 높은 반복 재생률, 부모의 공동 시청 증가",
-      "example": "Belly Button Song Dance! CoComelon (12억+ 조회)",
+      "pattern": "[상황/행동] [교육/재미] #shorts",
+      "reason": "키즈/가족층 높은 CTR, 반복 재시청으로 높은 조회수 축적",
+      "example": "Sharing Snacks! 🍡 Mighty Little Bheem | Netflix Jr #shorts",
       "click_rate": 0.25,
       "avg_views": 110000,
       "frequency": "low",
@@ -138,11 +138,11 @@
       "avg_views": 70000
     }
   ],
-  "prompt_boost": "감정 이모지+관계/상황+반전요소 조합으로 클릭률 극대화. 아동층 타겟시 교육성 추가",
+  "prompt_boost": "감정 이모지+반전 예고+알려진 캐릭터/상황을 조합해 호기심 극대화하기",
   "hot_categories": [
-    "감정공감/관계(형제자매, 가족)",
-    "교육/학습콘텐츠(유아용)",
-    "예능/웃음(반전/애니메이션밈)"
+    "키즈/교육 콘텐츠 (CoComelon, Netflix Jr 등)",
+    "가족 관계/감정물 (Sister love, 공유 주제)",
+    "인기 IP 활용 (Tom&Jerry 패러디, 애니메이션 밈)"
   ],
   "today_prompt": "오늘(월) 최적 제목 패턴: [감정 이모지] [관계/상황] #shorts | 우선 키워드: 수익, 반전, 부업 | 트렌딩 카테고리: 감정공감/관계(형제자매, 가족), 교육/학습콘텐츠(유아용) | 감정 이모지+관계/상황+반전요소 조합으로 클릭률 극대화. 아동층 타겟시 교육성 추가",
   "today_weekday": "월"
