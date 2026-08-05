@@ -1,0 +1,35 @@
+{
+  "date": "20260805",
+  "analysis": {
+    "top_patterns": [
+      {
+        "pattern": "[감정 이모지] [관계/상황] #shorts",
+        "reason": "감정 표현과 이모지 조합으로 즉각적인 클릭 유도, 22억+ 조회수 달성",
+        "example": "Sister love 💕 #shorts"
+      },
+      {
+        "pattern": "[캐릭터] [음식 이모지] [결말/반전] 😂 #shorts",
+        "reason": "유명 캐릭터+음식+반전 요소로 호기심 자극, 20억+ 조회수 기록",
+        "example": "Tom 🍓 Jerry (Rithvi&Kavi)Real End Twist 😂🎈 #shorts"
+      },
+      {
+        "pattern": "[행동/노래] 배우기! [주제] | [채널명] #shorts",
+        "reason": "교육 콘텐츠+유명 채널로 신뢰도 높음, 13억+ 조회수 달성",
+        "example": "Belly Button Song Dance! Learn about the Body! CoComelon #Shorts"
+      }
+    ],
+    "hot_keywords": [
+      "반전",
+      "가족 (형제자매)",
+      "캐릭터 콘텐츠",
+      "아동 교육",
+      "아트/드로잉"
+    ],
+    "top_categories": [
+      "감정 드라마/가족 관계물",
+      "키즈/교육 콘텐츠",
+      "엔터테인먼트/예능"
+    ],
+    "prompt_boost": "반전 요소+감정 이모지+캐릭터/실제 사람 조합으로 감정 공감 극대화"
+  }
+}
